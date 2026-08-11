@@ -1,0 +1,348 @@
+/* ==========================================
+   ملف التصميم الشامل لصالون نوسا (RTL مدعوم)
+   ========================================== */
+
+:root {
+    --primary-dark: #2c3e50;
+    --primary-light: #ecf0f1;
+    --accent-color: #e74c3c;
+    --success-color: #27ae60;
+    --warning-color: #f39c12;
+    --text-color: #333333;
+    --bg-color: #f8f9fa;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    direction: rtl;
+    text-align: right;
+}
+
+/* الأزرار والعناصر العامة */
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    transition: background 0.3s;
+}
+
+.btn-primary {
+    background-color: var(--primary-dark);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background-color: #1a252f;
+}
+
+.btn-secondary {
+    background-color: #7f8c8d;
+    color: #fff;
+}
+
+.btn-secondary:hover {
+    background-color: #616a6b;
+}
+
+.btn-danger {
+    background-color: var(--accent-color);
+    color: #fff;
+}
+
+.btn-danger:hover {
+    background-color: #c0392b;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.85rem;
+}
+
+.w-100 {
+    width: 100%;
+}
+
+.mt-2 { margin-top: 10px; }
+.mt-3 { margin-top: 15px; }
+.mt-4 { margin-top: 20px; }
+.mb-3 { margin-bottom: 15px; }
+.text-center { text-align: center; }
+.text-muted { color: #7f8c8d; font-size: 0.9rem; }
+.hidden { display: none !important; }
+
+/* العروض والتبويبات */
+.view {
+    display: none;
+}
+
+.view.active {
+    display: block;
+}
+
+/* تسجيل الدخول */
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: linear-gradient(135deg, #2c3e50, #4ca1af);
+}
+
+.auth-card {
+    background: #fff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    width: 100%;
+    max-width: 400px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+/* بوابة العملاء */
+.client-container {
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 20px;
+}
+
+.client-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.client-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s;
+}
+
+.tab-btn.active {
+    background: var(--primary-dark);
+    color: #fff;
+    border-color: var(--primary-dark);
+}
+
+.client-tab-content {
+    display: none;
+}
+
+.client-tab-content.active {
+    display: block;
+}
+
+/* الكروت والجداول */
+.card {
+    background: #fff;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+table th, table td {
+    padding: 12px;
+    text-align: right;
+    border-bottom: 1px solid #eee;
+}
+
+table th {
+    background-color: #f1f2f6;
+    color: var(--primary-dark);
+}
+
+.badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    display: inline-block;
+}
+
+/* لوحة تحكم الإدارة (Dashboard Layout) */
+.dashboard-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 280px;
+    background-color: var(--primary-dark);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 20px;
+}
+
+.sidebar-brand {
+    text-align: center;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sidebar-brand h3 {
+    margin-bottom: 5px;
+}
+
+.sidebar-menu {
+    list-style: none;
+    margin-top: 20px;
+    flex: 1;
+}
+
+.sidebar-menu li {
+    margin-bottom: 10px;
+}
+
+.sidebar-menu a {
+    color: #bdc3c7;
+    text-decoration: none;
+    display: block;
+    padding: 12px;
+    border-radius: 6px;
+    transition: 0.3s;
+}
+
+.sidebar-menu a:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+.main-content {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+}
+
+/* الإحصائيات */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+}
+
+.stat-card {
+    background: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    text-align: center;
+}
+
+.stat-card .value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+/* النافذة المنبثقة Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #fff;
+    padding: 30px;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+}
+
+.ticket-card {
+    background: #fdfdfd;
+    border: 2px dashed #bdc3c7;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.ticket-card p {
+    margin-bottom: 8px;
+}
+
+.wallet-box {
+    background: #e8f8f5;
+    border: 1px solid #a3e4d7;
+    padding: 12px;
+    border-radius: 6px;
+}

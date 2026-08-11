@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منظومة صالون نوسا الذكية</title>
+    <!-- مكتبة الأيقونات الشهيرة FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- ملف التصميم الخارجي style.css -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- 1. واجهة تسجيل الدخول للأدمن ومديري الفروع -->
+    <div id="auth-view" class="view active">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="text-center mb-3">
+                    <i class="fa-solid fa-scissors fa-3x" style="color: var(--primary-dark);"></i>
+                    <h2>صالون نوسا</h2>
+                    <p class="text-muted">تسجيل الدخول للوحة التحكم والإدارة</p>
+                </div>
+                
+                <form id="login-form">
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-envelope"></i> البريد الإلكتروني</label>
+                        <input type="email" id="login-email" required placeholder="example@salon.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-lock"></i> كلمة المرور</label>
+                        <input type="password" id="login-password" required placeholder="********">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 mt-2">دخول لوحة التحكم</button>
+                </form>
+
+                <div class="text-center mt-4">
+                    <button type="button" id="show-client-portal" class="btn btn-secondary w-100">
+                        <i class="fa-solid fa-store"></i> الانتقال لبوابة العملاء والحجوزات
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. بوابة العملاء (حجز خدمات، طلب منتجات، وتتبع الحجوزات) -->
+    <div id="client-view" class="view">
+        <div class="client-container">
+            <header class="client-header">
+                <div class="logo-area">
+                    <i class="fa-solid fa-crown" style="color: gold;"></i>
+                    <h1>صالون نوسا - بوابة العملاء</h1>
+                </div>
+                <button type="button" id="back-to-login" class="btn btn-secondary btn-sm">
+                    <i class="fa-solid fa-arrow-right"></i> العودة لتسجيل الدخول
+                </button>
+            </header>
+
+            <div class="client-tabs">
+                <button class="tab-btn active" data-tab="tab-services"><i class="fa-solid fa-calendar-check"></i> حجز خدمات الصالون</button>
+                <button class="tab-btn" data-tab="tab-products"><i class="fa-solid fa-bag-shopping"></i> طلب منتجات وعروض</button>
+                <button class="tab-btn" data-tab="tab-track"><i class="fa-solid fa-magnifying-glass-location"></i> تتبع الحجوزات والأوردرات</button>
+            </div>
+
+            <!-- تبويب حجز الخدمات -->
+            <div id="tab-services" class="client-tab-content active">
+                <div class="card">
+                    <h3>حجز دور خدمة جديد</h3>
+                    <form id="client-service-form" class="mt-3">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>اختر الفرع</label>
+                                <select id="cs-branch" required>
+                                    <option value="dokki">فرع الدواجن</option>
+                                    <option value="haddayek">فرع الحدائق</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>اختر الخدمة والكود المتاح</label>
+                                <select id="cs-service" required>
+                                    <option value="">اختر الفرع أولاً...</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>اسم العميل</label>
+                                <input type="text" id="cs-name" required placeholder="اسمك العميل">
+                            </div>
+                            <div class="form-group">
+                                <label>رقم الهاتف (للتتبع)</label>
+                                <input type="tel" id="cs-phone" required placeholder="010xxxxxxxx">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>طريقة الدفع</label>
+                                <select id="cs-payment-method" required>
+                                    <option value="cash">نقدي (كاش بالصالون)</option>
+                                    <option value="wallet">فودافون كاش</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="cs-wallet-info-box" class="wallet-box hidden mt-2 mb-3">
+                            <p><strong>حوالات فودافون كاش متاحة على الأرقام الآتية للفرع المختار:</strong></p>
+                            <div id="cs-wallets-list"></div>
+                            <p class="text-muted mt-1" style="font-size: 0.85rem;">يرجى تحويل المبلغ المستحق ثم تأكيد الحجز وسيتم مراجعته من الإدارة.</p>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-3">تأكيد حجز الخدمة واستخراج التذكرة</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- تبويب طلب المنتجات (المُحدث) -->
+            <div id="tab-products" class="client-tab-content">
+                <div class="card">
+                    <h3>شراء وطلب المنتجات والعروض</h3>
+                    <form id="client-product-form" class="mt-3">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>اختر الفرع</label>
+                                <select id="cp-branch" required>
+                                    <option value="dokki">فرع الدواجن</option>
+                                    <option value="haddayek">فرع الحدائق</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>اختر المنتج</label>
+                                <select id="cp-product" required>
+                                    <option value="">اختر الفرع أولاً...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>الكمية المطلوبة</label>
+                                <input type="number" id="cp-qty" value="1" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>اسم العميل</label>
+                                <input type="text" id="cp-name" required placeholder="اسمك العميل">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>رقم الهاتف</label>
+                                <input type="tel" id="cp-phone" required placeholder="010xxxxxxxx">
+                            </div>
+                            <div class="form-group">
+                                <label>طريقة الدفع</label>
+                                <select id="cp-payment-method" required>
+                                    <option value="cash">نقدي (عند الاستلام)</option>
+                                    <option value="wallet">فودافون كاش</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- [جديد] إضافة خيارات الاستلام والعنوان -->
+                        <div class="form-row mt-3" style="border-top: 1px solid #eee; padding-top: 15px;">
+                            <div class="form-group">
+                                <label>طريقة الاستلام / الشحن</label>
+                                <select id="cp-delivery-type" required>
+                                    <option value="pickup">استلام من الصالون (مجاناً)</option>
+                                    <option value="nouran">استلام من محل نوران شارع الشهيد (مجاناً)</option>
+                                    <option value="local">توصيل داخل القاهرة ( 70 ج.م)</option>
+                                    <option value="regional">شحن محافظات ( 90 ج.م)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="cp-address-group" class="hidden">
+                                <label>عنوان التوصيل بالتفصيل</label>
+                                <textarea id="cp-address" placeholder="رقم الشارع، المنطقة، المدينة..."></textarea>
+                            </div>
+                        </div>
+
+                        <!-- [جديد] منطقة ملخص السعر -->
+                        <div id="cp-price-summary" class="mt-3 p-3" style="background-color: #f8f9fa; border-radius: 5px;">
+                            <!-- سيتم ملئها جافاسكريبت -->
+                            <p>سعر المنتجات: 0 ج.م</p>
+                            <p>رسوم الشحن: 0 ج.م</p>
+                            <h4>الإجمالي: 0 ج.م</h4>
+                        </div>
+
+                        <div id="cp-wallet-info-box" class="wallet-box hidden mt-2 mb-3">
+                            <p><strong>حوالات فودافون كاش متاحة على الأرقام الآتية:</strong></p>
+                            <div id="cp-wallets-list"></div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-3">تأكيد طلب المنتج</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- تبويب تتبع الحجوزات وحالة الأوردرات -->
+            <div id="tab-track" class="client-tab-content">
+                <div class="card">
+                    <h3>استعلام ومتابعة حالة الحجوزات والأوردرات</h3>
+                    <form id="client-track-form" class="mt-3">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>رقم الهاتف المستخدم في الحجز</label>
+                                <input type="tel" id="ct-phone" required placeholder="أدخل رقم هاتفك هنا...">
+                            </div>
+                            <div class="form-group">
+                                <label>اختر الفرع (اختياري)</label>
+                                <select id="ct-branch">
+                                    <option value="">كل الفروع</option>
+                                    <option value="dokki">فرع الدواجن</option>
+                                    <option value="haddayek">فرع الحدائق</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-2">بحث وتتبع الحالة</button>
+                    </form>
+
+                    <div id="track-result-area" class="mt-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. لوحة تحكم الإدارة والفروع (Dashboard) -->
+    <div id="dashboard-view" class="view">
+        <div class="dashboard-layout">
+            <!-- الشريط الجانبي -->
+            <aside class="sidebar">
+                <div class="sidebar-brand">
+                    <h3>صالون نوسا</h3>
+                    <span id="user-role-badge" class="badge bg-light text-dark">صلاحية المستخدم</span>
+                </div>
+                <ul id="sidebar-menu-items" class="sidebar-menu">
+                    <!-- يتم تعبئتها ديناميكياً برمجياً حسب الصلاحية -->
+                </ul>
+                <div class="sidebar-footer">
+                    <button type="button" id="logout-btn" class="btn btn-danger w-100">
+                        <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
+                    </button>
+                </div>
+            </aside>
+
+            <!-- المحتوى الحي الديناميكي الرئيسي -->
+            <main class="main-content">
+                <div id="dynamic-content-area">
+                    <!-- يتم حقن الجداول والبيانات هنا من ملف script.js -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- نافذة منبثقة (Modal) لعرض تذكرة الحجز وكود الكرسي للعميل -->
+    <div id="ticket-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="text-center">
+                <i class="fa-solid fa-circle-check fa-3x" style="color: #27ae60;"></i>
+                <h3 class="mt-2">تم تسجيل حجزك بنجاح!</h3>
+                <p class="text-muted">احتفظ برقم كود الحجز الخاص بك لمتابعته داخل الصالون</p>
+            </div>
+            <div id="ticket-details-content" class="ticket-card mt-3"></div>
+            <button type="button" id="close-ticket-modal" class="btn btn-primary w-100 mt-3">إغلاق النافذة</button>
+        </div>
+    </div>
+
+    <!-- ربط ملف الجافاسكريبت الرئيسي -->
+    <script src="script.js"></script>
+</body>
+</html>
