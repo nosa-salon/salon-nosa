@@ -1,7 +1,3 @@
-/* ==========================================
-   ملف التصميم الشامل لصالون نوسا (RTL مدعوم)
-   ========================================== */
-
 :root {
     --primary-dark: #2c3e50;
     --primary-light: #ecf0f1;
@@ -26,7 +22,6 @@ body {
     text-align: right;
 }
 
-/* الأزرار والعناصر العامة */
 .btn {
     padding: 10px 20px;
     border: none;
@@ -81,7 +76,6 @@ body {
 .text-muted { color: #7f8c8d; font-size: 0.9rem; }
 .hidden { display: none !important; }
 
-/* العروض والتبويبات */
 .view {
     display: none;
 }
@@ -90,7 +84,6 @@ body {
     display: block;
 }
 
-/* تسجيل الدخول */
 .auth-container {
     display: flex;
     justify-content: center;
@@ -118,7 +111,7 @@ body {
     font-weight: 600;
 }
 
-.form-group input, .form-group select {
+.form-group input, .form-group select, .form-group textarea {
     width: 100%;
     padding: 10px;
     border: 1px solid #ddd;
@@ -135,7 +128,6 @@ body {
     flex: 1;
 }
 
-/* بوابة العملاء */
 .client-container {
     max-width: 900px;
     margin: 30px auto;
@@ -190,7 +182,6 @@ body {
     display: block;
 }
 
-/* الكروت والجداول */
 .card {
     background: #fff;
     padding: 25px;
@@ -225,9 +216,14 @@ table th {
     border-radius: 20px;
     font-size: 0.85rem;
     display: inline-block;
+    color: #fff;
 }
 
-/* لوحة تحكم الإدارة (Dashboard Layout) */
+.badge-success { background-color: var(--success-color); }
+.badge-warning { background-color: var(--warning-color); }
+.badge-danger { background-color: var(--accent-color); }
+.badge-secondary { background-color: #7f8c8d; }
+
 .dashboard-layout {
     display: flex;
     height: 100vh;
@@ -267,13 +263,15 @@ table th {
 .sidebar-menu a {
     color: #bdc3c7;
     text-decoration: none;
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     padding: 12px;
     border-radius: 6px;
     transition: 0.3s;
 }
 
-.sidebar-menu a:hover {
+.sidebar-menu a:hover, .sidebar-menu a.active {
     background: rgba(255,255,255,0.1);
     color: #fff;
 }
@@ -285,7 +283,6 @@ table th {
     background-color: var(--bg-color);
 }
 
-/* الإحصائيات */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -306,7 +303,6 @@ table th {
     margin-top: 10px;
 }
 
-/* النافذة المنبثقة Modal */
 .modal {
     position: fixed;
     top: 0;
@@ -336,13 +332,29 @@ table th {
     border-radius: 8px;
 }
 
-.ticket-card p {
-    margin-bottom: 8px;
-}
-
 .wallet-box {
     background: #e8f8f5;
     border: 1px solid #a3e4d7;
     padding: 12px;
     border-radius: 6px;
+}
+
+@media (max-width: 768px) {
+    .dashboard-layout {
+        flex-direction: column;
+        height: auto;
+        overflow: auto;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+    }
+    .main-content {
+        height: auto;
+        padding: 15px;
+    }
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
 }
