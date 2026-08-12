@@ -1,6 +1,22 @@
 // ==========================================
-// ملف script.js الكامل والنهائي لتطبيق صالون نوسا (مع إضافة خيارات الشحن والعنوان)
+// ملف script.js الكامل والنهائي لصالون نوسا (مربوط بقاعدة بيانات Firebase)
 // ==========================================
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD204TD07S2B7pETSiWURZAwdPWxvGWkHo",
+  authDomain: "salonnosa-d350f.firebaseapp.com",
+  databaseURL: "https://salonnosa-d350f-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "salonnosa-d350f",
+  storageBucket: "salonnosa-d350f.firebasestorage.app",
+  messagingSenderId: "640231806022",
+  appId: "1:640231806022:web:11297a1d38f7a487d52647"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 let currentUser = JSON.parse(sessionStorage.getItem('salon_current_user')) || null;
 let userRole = sessionStorage.getItem('salon_user_role') || null; 
@@ -12,7 +28,7 @@ const validAccounts = {
     "admin@salon.com": { pass: "admin9050", role: "admin", name: "أدمن المنتجات والعروض" }
 };
 
-let appData = JSON.parse(localStorage.getItem('salon_app_data')) || {
+let appData = {
     services: [
         { id: '1', name: 'قص وتدريج شعر', branchId: 'dokki', price: 150, max: 10, currentCount: 0, codePrefix: 'NOSA' }
     ],
@@ -36,8 +52,22 @@ let appData = JSON.parse(localStorage.getItem('salon_app_data')) || {
     }
 };
 
+// الاستماع للبيانات من السحابة لحظياً
+onValue(ref(db, 'salon_app_data'), (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+        appData = data;
+        if (currentUser && userRole) {
+            // تحديث الشاشة الحالية تلقائياً عند حدوث أي تغير سحابي
+            if (document.getElementById('dashboard-view').classList.contains('active')) {
+                renderDashboard();
+            }
+        }
+    }
+});
+
 function saveData() {
-    localStorage.setItem('salon_app_data', JSON.stringify(appData));
+    set(ref(db, 'salon_app_data'), appData);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1300,3 +1330,23 @@ function closeBranchDay(branchId) {
         loadNosaOverview();
     }
 }
+
+// جعل الدوال متاحة عالمياً داخل ملف الـ HTML والـ onclick
+window.loadNosaOverview = loadNosaOverview;
+window.loadAdminShippingSection = loadAdminShippingSection;
+window.loadAdminOffersSection = loadAdminOffersSection;
+window.loadAdminWalletsSection = loadAdminWalletsSection;
+window.loadAdminPaymentsSection = loadAdminPaymentsSection;
+window.loadBranchOffersView = loadBranchOffersView;
+window.nextPrefixQueue = nextPrefixQueue;
+window.resetItemCount = resetItemCount;
+window.updateProductOrderStatus = updateProductOrderStatus;
+window.confirmBranchCashPayment = confirmBranchCashPayment;
+window.deleteBranchBooking = deleteBranchBooking;
+window.deleteItem = deleteItem;
+window.deleteWallet = deleteWallet;
+window.confirmAdminPayment = confirmAdminPayment;
+window.deleteAdminBooking = deleteAdminBooking;
+window.deleteNosaInvoice = deleteNosaInvoice;
+window.clearAllNosaInvoices = clearAllNosaInvoices;
+window.closeBranchDay = closeBranchDay;
