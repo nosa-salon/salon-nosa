@@ -116,7 +116,7 @@
                 </div>
             </div>
 
-            <!-- تبويب طلب المنتجات (المُحدث) -->
+            <!-- تبويب طلب المنتجات -->
             <div id="tab-products" class="client-tab-content">
                 <div class="card">
                     <h3>شراء وطلب المنتجات والعروض</h3>
@@ -162,7 +162,6 @@
                             </div>
                         </div>
 
-                        <!-- [جديد] إضافة خيارات الاستلام والعنوان -->
                         <div class="form-row mt-3" style="border-top: 1px solid #eee; padding-top: 15px;">
                             <div class="form-group">
                                 <label>طريقة الاستلام / الشحن</label>
@@ -179,9 +178,7 @@
                             </div>
                         </div>
 
-                        <!-- [جديد] منطقة ملخص السعر -->
                         <div id="cp-price-summary" class="mt-3 p-3" style="background-color: #f8f9fa; border-radius: 5px;">
-                            <!-- سيتم ملئها جافاسكريبت -->
                             <p>سعر المنتجات: 0 ج.م</p>
                             <p>رسوم الشحن: 0 ج.م</p>
                             <h4>الإجمالي: 0 ج.م</h4>
@@ -228,15 +225,12 @@
     <!-- 3. لوحة تحكم الإدارة والفروع (Dashboard) -->
     <div id="dashboard-view" class="view">
         <div class="dashboard-layout">
-            <!-- الشريط الجانبي -->
             <aside class="sidebar">
                 <div class="sidebar-brand">
                     <h3>صالون نوسا</h3>
                     <span id="user-role-badge" class="badge bg-light text-dark">صلاحية المستخدم</span>
                 </div>
-                <ul id="sidebar-menu-items" class="sidebar-menu">
-                    <!-- يتم تعبئتها ديناميكياً برمجياً حسب الصلاحية -->
-                </ul>
+                <ul id="sidebar-menu-items" class="sidebar-menu"></ul>
                 <div class="sidebar-footer">
                     <button type="button" id="logout-btn" class="btn btn-danger w-100">
                         <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
@@ -244,16 +238,13 @@
                 </div>
             </aside>
 
-            <!-- المحتوى الحي الديناميكي الرئيسي -->
             <main class="main-content">
-                <div id="dynamic-content-area">
-                    <!-- يتم حقن الجداول والبيانات هنا من ملف script.js -->
-                </div>
+                <div id="dynamic-content-area"></div>
             </main>
         </div>
     </div>
 
-    <!-- نافذة منبثقة (Modal) لعرض تذكرة الحجز وكود الكرسي للعميل -->
+    <!-- نافذة منبثقة (Modal) لعرض تذكرة الحجز -->
     <div id="ticket-modal" class="modal hidden">
         <div class="modal-content">
             <div class="text-center">
@@ -266,7 +257,7 @@
         </div>
     </div>
 
-    <!-- ربط ملف الجافاسكريبت الرئيسي -->
-    <script src="script.js"></script>
+    <!-- تم التعديل هنا لتتمكن من استخدام Firebase داخل ملف الـ JS -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
