@@ -11,11 +11,6 @@
 </head>
 <body>
 
-    <!-- زر التبديل للشاشات الصغيرة لإظهار القائمة الجانبية -->
-    <button type="button" id="mobile-sidebar-toggle" class="mobile-toggle-btn" style="display: none; position: fixed; top: 15px; right: 15px; z-index: 1100;">
-        <i class="fa-solid fa-bars"></i> القائمة
-    </button>
-
     <!-- 1. واجهة تسجيل الدخول للأدمن ومديري الفروع -->
     <div id="auth-view" class="view active">
         <div class="auth-container">
@@ -92,7 +87,7 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label>اسم العميل</label>
-                                <input type="text" id="cs-name" required placeholder="اسم العميل">
+                                <input type="text" id="cs-name" required placeholder="اسمك العميل">
                             </div>
                             <div class="form-group">
                                 <label>رقم الهاتف (للتتبع)</label>
@@ -121,7 +116,7 @@
                 </div>
             </div>
 
-            <!-- تبويب طلب المنتجات -->
+            <!-- تبويب طلب المنتجات (المُحدث) -->
             <div id="tab-products" class="client-tab-content">
                 <div class="card">
                     <h3>شراء وطلب المنتجات والعروض</h3>
@@ -149,7 +144,7 @@
                             </div>
                             <div class="form-group">
                                 <label>اسم العميل</label>
-                                <input type="text" id="cp-name" required placeholder="اسم العميل">
+                                <input type="text" id="cp-name" required placeholder="اسمك العميل">
                             </div>
                         </div>
 
@@ -167,6 +162,7 @@
                             </div>
                         </div>
 
+                        <!-- [جديد] إضافة خيارات الاستلام والعنوان -->
                         <div class="form-row mt-3" style="border-top: 1px solid #eee; padding-top: 15px;">
                             <div class="form-group">
                                 <label>طريقة الاستلام / الشحن</label>
@@ -177,14 +173,15 @@
                                     <option value="regional">شحن محافظات ( 90 ج.م)</option>
                                 </select>
                             </div>
-                            <!-- تم تصحيح الـ id والـ class لتوافق سكربت الجافاسكريبت بالكامل -->
-                            <div class="form-group hidden" id="cp-address-container">
+                            <div class="form-group" id="cp-address-group" class="hidden">
                                 <label>عنوان التوصيل بالتفصيل</label>
-                                <textarea id="cp-address" class="form-control" placeholder="رقم الشارع، المنطقة، المدينة..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+                                <textarea id="cp-address" placeholder="رقم الشارع، المنطقة، المدينة..."></textarea>
                             </div>
                         </div>
 
+                        <!-- [جديد] منطقة ملخص السعر -->
                         <div id="cp-price-summary" class="mt-3 p-3" style="background-color: #f8f9fa; border-radius: 5px;">
+                            <!-- سيتم ملئها جافاسكريبت -->
                             <p>سعر المنتجات: 0 ج.م</p>
                             <p>رسوم الشحن: 0 ج.م</p>
                             <h4>الإجمالي: 0 ج.م</h4>
@@ -231,12 +228,15 @@
     <!-- 3. لوحة تحكم الإدارة والفروع (Dashboard) -->
     <div id="dashboard-view" class="view">
         <div class="dashboard-layout">
-            <aside class="sidebar" id="app-sidebar">
+            <!-- الشريط الجانبي -->
+            <aside class="sidebar">
                 <div class="sidebar-brand">
                     <h3>صالون نوسا</h3>
-                    <span id="user-role-badge" class="badge badge-secondary">صلاحية المستخدم</span>
+                    <span id="user-role-badge" class="badge bg-light text-dark">صلاحية المستخدم</span>
                 </div>
-                <ul id="sidebar-menu-items" class="sidebar-menu"></ul>
+                <ul id="sidebar-menu-items" class="sidebar-menu">
+                    <!-- يتم تعبئتها ديناميكياً برمجياً حسب الصلاحية -->
+                </ul>
                 <div class="sidebar-footer">
                     <button type="button" id="logout-btn" class="btn btn-danger w-100">
                         <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
@@ -244,13 +244,16 @@
                 </div>
             </aside>
 
+            <!-- المحتوى الحي الديناميكي الرئيسي -->
             <main class="main-content">
-                <div id="dynamic-content-area"></div>
+                <div id="dynamic-content-area">
+                    <!-- يتم حقن الجداول والبيانات هنا من ملف script.js -->
+                </div>
             </main>
         </div>
     </div>
 
-    <!-- نافذة منبثقة (Modal) لعرض تذكرة الحجز -->
+    <!-- نافذة منبثقة (Modal) لعرض تذكرة الحجز وكود الكرسي للعميل -->
     <div id="ticket-modal" class="modal hidden">
         <div class="modal-content">
             <div class="text-center">
@@ -263,7 +266,7 @@
         </div>
     </div>
 
-    <!-- ربط ملف الـ JS الرئيسي -->
-    <script type="module" src="script.js"></script>
+    <!-- ربط ملف الجافاسكريبت الرئيسي -->
+    <script src="script.js"></script>
 </body>
 </html>
