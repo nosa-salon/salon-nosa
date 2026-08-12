@@ -944,25 +944,16 @@ function loadAdminOffersSection() {
     }
 }
 
-// دالة renderAdminServicesTable المُحدثة والمؤمنة ضد الأخطاء
 function renderAdminServicesTable() {
     const listDiv = document.getElementById('admin-services-list');
     if (!listDiv) return;
-    
-    // التأكد من أن المصفوفات معرفة لمنع أي خطأ foreach عند إعادة التحميل
-    if (!appData.services) appData.services = [];
-    if (!appData.products) appData.products = [];
-
     let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
-    
     appData.services.forEach(s => {
         html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
     });
-    
     appData.products.forEach(p => {
         html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
     });
-    
     html += `</tbody></table>`;
     listDiv.innerHTML = html;
 }
@@ -1309,3 +1300,4 @@ function closeBranchDay(branchId) {
         loadNosaOverview();
     }
 }
+```[cite: 6]
