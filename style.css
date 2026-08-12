@@ -346,3 +346,178 @@ table th {
     padding: 12px;
     border-radius: 6px;
 }
+/* ==========================================
+   تحسين عرض لوحة الإدارة على الموبايل
+   لا يؤثر على شكل الكمبيوتر
+   ========================================== */
+@media (max-width: 768px) {
+    html, body {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .dashboard-layout {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-height: 100vh;
+        height: auto;
+        overflow: visible;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        min-height: 0;
+        padding: 14px 12px;
+        flex: 0 0 auto;
+    }
+
+    .sidebar-brand {
+        padding-bottom: 12px;
+    }
+
+    .sidebar-brand h3 {
+        font-size: 1.35rem;
+    }
+
+    .sidebar-menu {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+        flex: none;
+        max-height: 42vh;
+        overflow-y: auto;
+        padding-left: 2px;
+    }
+
+    .sidebar-menu li {
+        margin-bottom: 0;
+        min-width: 0;
+    }
+
+    .sidebar-menu a {
+        padding: 10px 8px;
+        font-size: 0.88rem;
+        line-height: 1.35;
+        min-height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        word-break: break-word;
+    }
+
+    .sidebar-footer {
+        margin-top: 10px;
+    }
+
+    .main-content {
+        width: 100%;
+        min-width: 0;
+        padding: 14px 10px 30px;
+        overflow: visible;
+        flex: 1 1 auto;
+    }
+
+    .main-content > * {
+        max-width: 100%;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .stat-card {
+        padding: 14px;
+    }
+
+    .stat-card .value {
+        font-size: 1.45rem;
+    }
+
+    .card {
+        padding: 14px;
+        border-radius: 9px;
+    }
+
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .client-container {
+        width: 100%;
+        max-width: 100%;
+        margin: 10px auto;
+        padding: 10px;
+    }
+
+    .client-header {
+        padding: 14px;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .client-tabs {
+        flex-wrap: wrap;
+        gap: 7px;
+    }
+
+    .tab-btn {
+        min-width: calc(50% - 5px);
+        padding: 10px 7px;
+        font-size: 0.9rem;
+    }
+
+    table {
+        min-width: 650px;
+    }
+
+    .table-responsive {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .modal-content {
+        width: calc(100% - 24px);
+        max-width: none;
+        padding: 18px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 430px) {
+    .sidebar {
+        padding: 10px 8px;
+    }
+
+    .sidebar-menu {
+        grid-template-columns: 1fr;
+        max-height: 48vh;
+    }
+
+    .sidebar-menu a {
+        min-height: 42px;
+        font-size: 0.92rem;
+    }
+
+    .main-content {
+        padding: 10px 8px 24px;
+    }
+
+    .card {
+        padding: 12px;
+    }
+
+    .btn {
+        max-width: 100%;
+    }
+}
