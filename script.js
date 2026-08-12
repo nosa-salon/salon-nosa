@@ -1,5 +1,5 @@
 // ==========================================
-// ملف script.js الكامل والنهائي لتطبيق صالون نوسا (مع إضافة خيارات الشحن والعنوان)
+// ملف script.js الكامل والنهائي لتطبيق صالون نوسا (مع إضافة خيارات الشحن والعنوان وحماية البيانات)
 // ==========================================
 
 let currentUser = JSON.parse(sessionStorage.getItem('salon_current_user')) || null;
@@ -187,7 +187,8 @@ function initEventListeners() {
             const branchId = document.getElementById('cs-branch').value;
             const serviceId = document.getElementById('cs-service').value;
             
-            const serviceObj = appData.services.find(s => s.id === serviceId);
+            const servicesList = appData.services || [];
+            const serviceObj = servicesList.find(s => s.id === serviceId);
 
             if (!serviceObj || serviceObj.max <= 0) {
                 alert('عذراً، هذه الخدمة غير متاحة أو اكتمل عددها.');
@@ -227,6 +228,7 @@ function initEventListeners() {
                 address: '-'
             };
 
+            if (!appData.bookings) appData.bookings = [];
             appData.bookings.push(newBooking);
             saveData();
             showTicketModal(newBooking);
@@ -244,7 +246,8 @@ function initEventListeners() {
             const productQtyInput = document.getElementById('cp-qty');
             const requestedQty = productQtyInput ? parseInt(productQtyInput.value) || 1 : 1;
 
-            const productObj = appData.products.find(p => p.id === productId);
+            const productsList = appData.products || [];
+            const productObj = productsList.find(p => p.id === productId);
 
             if (!productObj || productObj.qty < requestedQty) {
                 alert(`عذراً، الكمية المطلوبة غير متوفرة في المخزن. المتبقي: ${productObj ? productObj.qty : 0}`);
@@ -304,6 +307,7 @@ function initEventListeners() {
                 address: deliveryType === 'pickup' ? 'استلام من الفرع مباشرة' : addressVal
             };
 
+            if (!appData.bookings) appData.bookings = [];
             appData.bookings.push(newBooking);
             saveData();
             showTicketModal(newBooking);
@@ -322,7 +326,8 @@ function initEventListeners() {
             const selectedBranch = document.getElementById('ct-branch').value;
             const resultDiv = document.getElementById('track-result-area');
             
-            let userBookings = appData.bookings.filter(b => b.customerPhone === phone);
+            const bookingsList = appData.bookings || [];
+            let userBookings = bookingsList.filter(b => b.customerPhone === phone);
             if (selectedBranch) {
                 userBookings = userBookings.filter(b => b.branchId === selectedBranch);
             }
@@ -341,7 +346,7 @@ function initEventListeners() {
                 const qtyDisplay = (b.type === 'حجز منتجات') ? `<span class="badge" style="background:#e67e22; color:#fff;">${b.quantity || 1} قطعة</span>` : `-`;
                 
                 let pCode = b.codePrefix || (b.bookingNumber.includes('-') ? b.bookingNumber.split('-')[0] : 'NOSA');
-                let branchBookingsByPrefix = appData.bookings.filter(item => item.branchId === b.branchId && (item.codePrefix === pCode || item.bookingNumber.startsWith(pCode)));
+                let branchBookingsByPrefix = bookingsList.filter(item => item.branchId === b.branchId && (item.codePrefix === pCode || item.bookingNumber.startsWith(pCode)));
                 
                 if (!appData.branchPrefixIndices[b.branchId]) appData.branchPrefixIndices[b.branchId] = {};
                 if (appData.branchPrefixIndices[b.branchId][pCode] === undefined) {
@@ -430,7 +435,8 @@ function updateClientProductTotalCalculation() {
     const deliveryType = deliverySelect ? deliverySelect.value : 'pickup';
     const branchId = branchSelect ? branchSelect.value : 'dokki';
 
-    const productObj = appData.products.find(p => p.id === productId);
+    const productsList = appData.products || [];
+    const productObj = productsList.find(p => p.id === productId);
     if (!productObj) {
         summaryBox.innerHTML = '';
         return;
@@ -468,7 +474,8 @@ function loadClientServices(branchId) {
     if (!select) return;
     select.innerHTML = '<option value="">اختر الخدمة المطلوبة والأكواد المتاحة...</option>';
     
-    appData.services.filter(s => s.branchId === branchId).forEach(s => {
+    const servicesList = appData.services || [];
+    servicesList.filter(s => s.branchId === branchId).forEach(s => {
         if (s.max > 0) {
             let currentSeqNum = (s.currentCount || 0) + 1;
             let prefixCode = s.codePrefix || 'NOSA';
@@ -486,7 +493,8 @@ function loadClientProducts(branchId) {
     if (!select) return;
     select.innerHTML = '<option value="">اختر المنتج المطلوب والأكواد المتاحة...</option>';
     
-    appData.products.filter(p => p.branchId === branchId).forEach(p => {
+    const productsList = appData.products || [];
+    productsList.filter(p => p.branchId === branchId).forEach(p => {
         if (p.qty > 0) {
             let currentSeqNum = (p.currentCount || 0) + 1;
             let prefixCode = p.codePrefix || 'NOSA';
@@ -503,7 +511,8 @@ function loadClientWallets(branchId, prefix) {
     const listDiv = document.getElementById(`${prefix}-wallets-list`);
     if (!listDiv) return;
     listDiv.innerHTML = '';
-    const wallets = appData.wallets.filter(w => w.branchId === branchId);
+    const walletsList = appData.wallets || [];
+    const wallets = walletsList.filter(w => w.branchId === branchId);
     if (wallets.length === 0) {
         listDiv.innerHTML = '<p>لا توجد محافظ مسجلة.</p>';
         return;
@@ -576,9 +585,13 @@ function loadBranchOffersView(branchId) {
     if (!area) return;
     
     const bName = branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق';
-    const branchBookings = appData.bookings.filter(b => b.branchId === branchId);
-    const branchServices = appData.services.filter(s => s.branchId === branchId);
-    const branchProducts = appData.products.filter(p => p.branchId === branchId);
+    const bookingsList = appData.bookings || [];
+    const servicesList = appData.services || [];
+    const productsList = appData.products || [];
+
+    const branchBookings = bookingsList.filter(b => b.branchId === branchId);
+    const branchServices = servicesList.filter(s => s.branchId === branchId);
+    const branchProducts = productsList.filter(p => p.branchId === branchId);
 
     let activePrefixes = new Set();
     branchServices.forEach(s => activePrefixes.add(s.codePrefix ? s.codePrefix.trim().toUpperCase() : 'NOSA'));
@@ -687,7 +700,8 @@ function loadBranchOffersView(branchId) {
         `;
         branchBookings.forEach(b => {
             let actionBtn = '';
-            let isAlreadyInvoiced = appData.invoices && appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
+            let invoicesList = appData.invoices || [];
+            let isAlreadyInvoiced = invoicesList.some(inv => inv.bookingNumber === b.bookingNumber);
 
             let statusControlHtml = '';
             if (b.type === 'حجز منتجات') {
@@ -746,7 +760,8 @@ function updateProductOrderStatus(bookingId) {
     if (!selectEl) return;
     const newStatus = selectEl.value;
 
-    const booking = appData.bookings.find(b => b.id === bookingId);
+    const bookingsList = appData.bookings || [];
+    const booking = bookingsList.find(b => b.id === bookingId);
     if (booking) {
         booking.orderStatus = newStatus;
         saveData();
@@ -761,10 +776,13 @@ function resetItemCount(itemId, type) {
         let targetItem = null;
         let pCode = '';
 
+        const servicesList = appData.services || [];
+        const productsList = appData.products || [];
+
         if (type === 'service') {
-            targetItem = appData.services.find(s => s.id === itemId);
+            targetItem = servicesList.find(s => s.id === itemId);
         } else {
-            targetItem = appData.products.find(p => p.id === itemId);
+            targetItem = productsList.find(p => p.id === itemId);
         }
 
         if (targetItem) {
@@ -772,7 +790,8 @@ function resetItemCount(itemId, type) {
             
             targetItem.currentCount = 0;
 
-            appData.bookings = appData.bookings.filter(b => {
+            const bookingsList = appData.bookings || [];
+            appData.bookings = bookingsList.filter(b => {
                 let matchesId = (b.itemId === itemId);
                 let matchesPrefix = (b.codePrefix === pCode || b.bookingNumber.startsWith(pCode + '-'));
                 return !(matchesId || matchesPrefix);
@@ -800,7 +819,8 @@ function resetItemCount(itemId, type) {
 }
 
 function nextPrefixQueue(branchId, pCode) {
-    const branchBookings = appData.bookings.filter(b => b.branchId === branchId && (b.codePrefix === pCode || b.bookingNumber.startsWith(pCode)));
+    const bookingsList = appData.bookings || [];
+    const branchBookings = bookingsList.filter(b => b.branchId === branchId && (b.codePrefix === pCode || b.bookingNumber.startsWith(pCode)));
     if (branchBookings.length === 0) {
         alert(`لا توجد حجوزات نشطة تحت الكود (${pCode}) حالياً!`);
         return;
@@ -823,7 +843,8 @@ function nextPrefixQueue(branchId, pCode) {
 }
 
 function confirmBranchCashPayment(bookingId) {
-    const booking = appData.bookings.find(b => b.id === bookingId);
+    const bookingsList = appData.bookings || [];
+    const booking = bookingsList.find(b => b.id === bookingId);
     if (booking) {
         booking.paymentStatus = 'تم استلام المبلغ';
         if (!appData.invoices) appData.invoices = [];
@@ -859,7 +880,8 @@ function confirmBranchCashPayment(bookingId) {
 
 function deleteBranchBooking(bookingId) {
     if (confirm('هل تريد حذف هذا الحجز نهائياً؟')) {
-        appData.bookings = appData.bookings.filter(b => b.id !== bookingId);
+        const bookingsList = appData.bookings || [];
+        appData.bookings = bookingsList.filter(b => b.id !== bookingId);
         saveData();
         let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : 'dokki');
         loadBranchOffersView(currentActiveBranch);
@@ -932,8 +954,10 @@ function loadAdminOffersSection() {
                 codePrefix: document.getElementById('adm-prefix').value.trim().toUpperCase()
             };
             if (type === 'service') {
+                if (!appData.services) appData.services = [];
                 appData.services.push(newItem);
             } else { 
+                if (!appData.products) appData.products = [];
                 appData.products.push(newItem); 
             }
             saveData();
@@ -947,20 +971,32 @@ function loadAdminOffersSection() {
 function renderAdminServicesTable() {
     const listDiv = document.getElementById('admin-services-list');
     if (!listDiv) return;
+    
+    const servicesList = appData.services || [];
+    const productsList = appData.products || [];
+
     let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
-    appData.services.forEach(s => {
+    
+    servicesList.forEach(s => {
         html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
     });
-    appData.products.forEach(p => {
+    
+    productsList.forEach(p => {
         html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
     });
+    
     html += `</tbody></table>`;
     listDiv.innerHTML = html;
 }
 
 function deleteItem(id, type) {
-    if(type === 'service') appData.services = appData.services.filter(s => s.id !== id);
-    else appData.products = appData.products.filter(p => p.id !== id);
+    if(type === 'service') {
+        const servicesList = appData.services || [];
+        appData.services = servicesList.filter(s => s.id !== id);
+    } else {
+        const productsList = appData.products || [];
+        appData.products = productsList.filter(p => p.id !== id);
+    }
     saveData();
     renderAdminServicesTable();
 }
@@ -1082,6 +1118,7 @@ function loadAdminWalletsSection() {
             const name = document.getElementById('w-name').value;
             const number = document.getElementById('w-number').value;
             
+            if (!appData.wallets) appData.wallets = [];
             appData.wallets.push({ 
                 id: 'W-' + Date.now(), 
                 branchId, 
@@ -1100,12 +1137,13 @@ function loadAdminWalletsSection() {
 function renderWalletsList() {
     const div = document.getElementById('wallets-admin-list');
     if (!div) return;
-    if (appData.wallets.length === 0) {
+    const walletsList = appData.wallets || [];
+    if (walletsList.length === 0) {
         div.innerHTML = '<p class="text-muted">لا توجد محافظ مسجلة حالياً.</p>';
         return;
     }
     let html = `<table><thead><tr><th>الفرع</th><th>اسم المحفظة</th><th>الرقم</th><th>الإجراء</th></tr></thead><tbody>`;
-    appData.wallets.forEach(w => {
+    walletsList.forEach(w => {
         html += `<tr>
             <td>${w.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td>
             <td>${w.name}</td>
@@ -1119,7 +1157,8 @@ function renderWalletsList() {
 
 function deleteWallet(walletId) {
     if (confirm('هل أنت متأكد من حذف رقم المحفظة هذا؟')) {
-        appData.wallets = appData.wallets.filter(w => w.id !== walletId);
+        const walletsList = appData.wallets || [];
+        appData.wallets = walletsList.filter(w => w.id !== walletId);
         saveData();
         renderWalletsList();
         alert('تم حذف المحفظة بنجاح.');
@@ -1136,14 +1175,16 @@ function loadAdminPaymentsSection() {
 function renderAdminPaymentsTable() {
     const container = document.getElementById('admin-payments-table');
     if (!container) return;
-    const walletBookings = appData.bookings.filter(b => b.paymentMethod === 'wallet');
+    const bookingsList = appData.bookings || [];
+    const walletBookings = bookingsList.filter(b => b.paymentMethod === 'wallet');
     if (walletBookings.length === 0) {
         container.innerHTML = '<p>لا توجد تحويلات معلقة.</p>';
         return;
     }
     let html = `<table><thead><tr><th>العميل</th><th>الكود</th><th>الفرع</th><th>التفاصيل والاستلام</th><th>الإجمالي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>`;
     walletBookings.forEach(b => {
-        let isAlreadyInvoiced = appData.invoices && appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
+        let invoicesList = appData.invoices || [];
+        let isAlreadyInvoiced = invoicesList.some(inv => inv.bookingNumber === b.bookingNumber);
         let btn = '';
         if (b.paymentStatus === 'جاري المراجعة' && !isAlreadyInvoiced) {
             btn = `<button class="btn btn-primary btn-sm" onclick="confirmAdminPayment('${b.id}')">تأكيد التحويل</button>`;
@@ -1159,7 +1200,8 @@ function renderAdminPaymentsTable() {
 }
 
 function confirmAdminPayment(bookingId) {
-    const b = appData.bookings.find(item => item.id === bookingId);
+    const bookingsList = appData.bookings || [];
+    const b = bookingsList.find(item => item.id === bookingId);
     if (b) {
         b.paymentStatus = 'تم استلام المبلغ';
         if (!appData.invoices) appData.invoices = [];
@@ -1194,7 +1236,8 @@ function confirmAdminPayment(bookingId) {
 
 function deleteAdminBooking(bookingId) {
     if (confirm('حذف الحجز؟')) {
-        appData.bookings = appData.bookings.filter(b => b.id !== bookingId);
+        const bookingsList = appData.bookings || [];
+        appData.bookings = bookingsList.filter(b => b.id !== bookingId);
         saveData();
         renderAdminPaymentsTable();
     }
@@ -1210,17 +1253,16 @@ function loadNosaOverview() {
     const haddayekClosedToday = appData.closedDays.some(d => d.branchId === 'haddayek' && d.date === todayStr);
 
     let dokkiInc = 0, haddayekInc = 0;
-    if (appData.invoices) {
-        appData.invoices.forEach(inv => {
-            let invBranch = (inv.branchId || '').trim().toLowerCase();
-            if (invBranch === 'dokki' || invBranch.includes('dokki') || invBranch.includes('الدواجن')) {
-                dokkiInc += Number(inv.price || 0);
-            }
-            if (invBranch === 'haddayek' || invBranch.includes('haddayek') || invBranch.includes('الحدائق')) {
-                haddayekInc += Number(inv.price || 0);
-            }
-        });
-    }
+    const invoicesList = appData.invoices || [];
+    invoicesList.forEach(inv => {
+        let invBranch = (inv.branchId || '').trim().toLowerCase();
+        if (invBranch === 'dokki' || invBranch.includes('dokki') || invBranch.includes('الدواجن')) {
+            dokkiInc += Number(inv.price || 0);
+        }
+        if (invBranch === 'haddayek' || invBranch.includes('haddayek') || invBranch.includes('الحدائق')) {
+            haddayekInc += Number(inv.price || 0);
+        }
+    });
 
     area.innerHTML = `
         <h2>اللوحة المالية وأرشيف الفواتير - نوسا (Master Admin)</h2>
@@ -1236,19 +1278,19 @@ function loadNosaOverview() {
                 <button class="btn btn-danger btn-sm mt-2" onclick="closeBranchDay('haddayek')">${haddayekClosedToday ? 'تم التقفيل اليوم' : 'تقفيل يوم الحدائق'}</button>
             </div>
             <div class="stat-card"><h4>إجمالي الإيرادات</h4><div class="value" style="color:#27ae60;">${dokkiInc + haddayekInc} جنيه</div></div>
-            <div class="stat-card"><h4>عدد الفواتير المعتمدة</h4><div class="value">${appData.invoices ? appData.invoices.length : 0}</div></div>
+            <div class="stat-card"><h4>عدد الفواتير المعتمدة</h4><div class="value">${invoicesList.length}</div></div>
         </div>
         <div class="card mt-4">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <h3>أرشيف الفواتير المعتمدة</h3>
-                ${(appData.invoices && appData.invoices.length > 0) ? `<button class="btn btn-danger btn-sm" onclick="clearAllNosaInvoices()"><i class="fa-solid fa-trash"></i> تصفير وحذف كل الفواتير والإيرادات</button>` : ''}
+                ${(invoicesList.length > 0) ? `<button class="btn btn-danger btn-sm" onclick="clearAllNosaInvoices()"><i class="fa-solid fa-trash"></i> تصفير وحذف كل الفواتير والإيرادات</button>` : ''}
             </div>
             <div class="table-responsive mt-2">
                 <table>
                     <thead><tr><th>رقم الفاتورة</th><th>كود الحجز</th><th>العميل</th><th>الفرع</th><th>العنصر والتفاصيل</th><th>المبلغ الإجمالي</th><th>الطريقة</th><th>التاريخ</th><th>إجراء الحذف</th></tr></thead>
                     <tbody>
-                        ${(!appData.invoices || appData.invoices.length === 0) ? '<tr><td colspan="9">لا توجد فواتير معتمدة بعد</td></tr>' : 
-                          appData.invoices.map(inv => {
+                        ${(invoicesList.length === 0) ? '<tr><td colspan="9">لا توجد فواتير معتمدة بعد</td></tr>' : 
+                          invoicesList.map(inv => {
                               let bDisplayName = (inv.branchId === 'dokki' || inv.branchId.includes('dokki')) ? 'فرع الدواجن' : 'فرع الحدائق';
                               return `<tr>
                               <td><strong>${inv.invoiceId}</strong></td>
@@ -1300,4 +1342,4 @@ function closeBranchDay(branchId) {
         loadNosaOverview();
     }
 }
-```[cite: 6]
+```[cite: 8]
