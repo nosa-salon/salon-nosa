@@ -1,5 +1,5 @@
 /* ==========================================
-   ملف التصميم الشامل لصالون نوسا (RTL مدعوم ومحدث)
+   ملف التصميم الشامل لصالون نوسا (RTL مدعوم)
    ========================================== */
 
 :root {
@@ -220,29 +220,11 @@ table th {
     color: var(--primary-dark);
 }
 
-/* الأوسمة (Badges) المحدثة */
 .badge {
     padding: 5px 10px;
     border-radius: 20px;
     font-size: 0.85rem;
     display: inline-block;
-    color: #fff;
-}
-
-.badge-success { 
-    background-color: var(--success-color); 
-}
-
-.badge-warning { 
-    background-color: var(--warning-color); 
-}
-
-.badge-danger { 
-    background-color: var(--accent-color); 
-}
-
-.badge-secondary { 
-    background-color: #7f8c8d; 
 }
 
 /* لوحة تحكم الإدارة (Dashboard Layout) */
@@ -260,7 +242,6 @@ table th {
     flex-direction: column;
     justify-content: space-between;
     padding: 20px;
-    transition: transform 0.3s ease;
 }
 
 .sidebar-brand {
@@ -286,15 +267,13 @@ table th {
 .sidebar-menu a {
     color: #bdc3c7;
     text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: block;
     padding: 12px;
     border-radius: 6px;
     transition: 0.3s;
 }
 
-.sidebar-menu a:hover, .sidebar-menu a.active {
+.sidebar-menu a:hover {
     background: rgba(255,255,255,0.1);
     color: #fff;
 }
@@ -304,19 +283,6 @@ table th {
     padding: 30px;
     overflow-y: auto;
     background-color: var(--bg-color);
-}
-
-/* زر القائمة للشاشات الصغيرة */
-.mobile-toggle-btn {
-    display: none;
-    background: var(--primary-dark);
-    color: #fff;
-    border: none;
-    padding: 10px 15px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1.2rem;
-    margin-bottom: 15px;
 }
 
 /* الإحصائيات */
@@ -379,37 +345,4 @@ table th {
     border: 1px solid #a3e4d7;
     padding: 12px;
     border-radius: 6px;
-}
-
-/* التجاوب مع الشاشات الصغيرة (Responsive Media Queries) */
-@media (max-width: 768px) {
-    .dashboard-layout {
-        flex-direction: column;
-        height: auto;
-        overflow: auto;
-    }
-
-    .sidebar {
-        width: 100%;
-        height: auto;
-        display: none; /* يتم إظهارها برمجياً عبر الـ JS عند الحاجة أو تحويلها */
-    }
-
-    .sidebar.mobile-open {
-        display: flex;
-    }
-
-    .main-content {
-        height: auto;
-        padding: 15px;
-    }
-
-    .mobile-toggle-btn {
-        display: inline-block;
-    }
-
-    .form-row {
-        flex-direction: column;
-        gap: 0;
-    }
 }
