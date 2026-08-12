@@ -52,6 +52,7 @@ let firebaseApplyingRemote = false;
 let firebaseLastSyncedData = null;
 let firebaseInitialLoadComplete = false;
 let firebasePendingSave = false;
+let firebaseLocalSnapshotAtStart = null;
 
 function cloneData(data) {
     try {
@@ -191,6 +192,9 @@ function startFirebaseRealtimeSync() {
         firebaseDb = firebase.database();
         firebaseDataRef = firebaseDb.ref('salonAppData');
         firebaseSyncStarted = true;
+        // نحتفظ بلقطة محلية عند بدء المزامنة لمعرفة أي تغييرات حدثت
+        // أثناء تحميل Firebase، خصوصاً إضافة خدمة/منتج من جهاز المسؤول.
+        firebaseLocalSnapshotAtStart = cloneData(appData);
 
         firebaseDataRef.once('value')
             .then(snapshot => {
@@ -211,11 +215,48 @@ function startFirebaseRealtimeSync() {
                         });
                 }
 
-                // Firebase هي المصدر الرئيسي للبيانات بعد تفعيل المزامنة.
-                // لا نعمل merge مع localStorage هنا، لأن الـmerge كان يعيد
-                // العناصر التي حذفها المستخدم من Firebase بعد الريفريش.
+                // Firebase هي المصدر الرئيسي، لكن لو حصل تعديل محلي أثناء
+                // أول تحميل (مثلاً إضافة خدمة/منتج من المسؤول) نرسل فقط الأقسام
+                // التي تغيرت فعلاً منذ بداية التحميل، بدون إعادة البيانات المحذوفة.
+                const localNow = cloneData(appData) || {};
+                const localAtStart = firebaseLocalSnapshotAtStart || {};
+                const pendingChangedParts = {};
+                let hasPendingChanges = false;
+
+                if (firebasePendingSave) {
+                    const allKeys = new Set([
+                        ...Object.keys(localAtStart || {}),
+                        ...Object.keys(localNow || {})
+                    ]);
+                    allKeys.forEach(key => {
+                        if (JSON.stringify(localAtStart[key]) !== JSON.stringify(localNow[key])) {
+                            pendingChangedParts[key] = localNow[key];
+                            hasPendingChanges = true;
+                        }
+                    });
+                }
+
                 firebaseApplyingRemote = true;
                 appData = cloneData(cloudData) || {};
+
+                if (hasPendingChanges) {
+                    Object.keys(pendingChangedParts).forEach(key => {
+                        appData[key] = cloneData(pendingChangedParts[key]);
+                    });
+                    localStorage.setItem('salon_app_data', JSON.stringify(appData));
+                    firebaseLastSyncedData = cloneData(appData);
+                    firebaseInitialLoadComplete = true;
+                    firebaseApplyingRemote = false;
+
+                    return firebaseDataRef.update(pendingChangedParts)
+                        .then(() => {
+                            firebasePendingSave = false;
+                            firebaseLocalSnapshotAtStart = cloneData(appData);
+                            refreshVisibleDataAfterFirebaseUpdate();
+                            console.log('Firebase: تم حفظ التعديلات التي حدثت أثناء التحميل، بما فيها الخدمات والمنتجات.');
+                        });
+                }
+
                 localStorage.setItem('salon_app_data', JSON.stringify(appData));
                 firebaseLastSyncedData = cloneData(appData);
                 firebaseInitialLoadComplete = true;
