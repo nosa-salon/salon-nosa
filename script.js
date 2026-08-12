@@ -1,5 +1,5 @@
 // ==========================================
-// ملف script.js الكامل والنهائي لصالون نوسا (مربوط بقاعدة بيانات Firebase)
+// ملف script.js الكامل والنهائي لصالون نوسا ومحل نوران (مربوط بقاعدة بيانات Firebase)
 // ==========================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
@@ -25,6 +25,7 @@ const validAccounts = {
     "nosa@salon.com": { pass: "nosa150180", role: "nosa", name: "نوسا (Master Admin)" },
     "dokki@salon.com": { pass: "dokki2526", role: "dokki", name: "مدير فرع الدواجن" },
     "haddayek@salon.com": { pass: "haddayek20240", role: "haddayek", name: "مدير فرع الحدائق" },
+    "nouran@salon.com": { pass: "nouran2026", role: "nouran", name: "مدير محل نوران" },
     "admin@salon.com": { pass: "admin9050", role: "admin", name: "أدمن المنتجات والعروض" }
 };
 
@@ -37,18 +38,21 @@ let appData = {
     ],
     wallets: [
         { id: '1', branchId: 'dokki', name: 'فودافون كاش الدواجن', number: '01012345678' },
-        { id: '2', branchId: 'haddayek', name: 'فودافون كاش الحدائق', number: '01298765432' }
+        { id: '2', branchId: 'haddayek', name: 'فودافون كاش الحدائق', number: '01298765432' },
+        { id: '3', branchId: 'nouran', name: 'فودافون كاش نوران', number: '01098765432' }
     ],
     shippingRates: {
         dokki: { pickup: 0, local: 30, regional: 60 },
-        haddayek: { pickup: 0, local: 30, regional: 60 }
+        haddayek: { pickup: 0, local: 30, regional: 60 },
+        nouran: { pickup: 0, local: 30, regional: 60 }
     },
     bookings: [],
     invoices: [],
     closedDays: [],
     branchPrefixIndices: {
         dokki: {},
-        haddayek: {}
+        haddayek: {},
+        nouran: {}
     }
 };
 
@@ -302,7 +306,7 @@ function initEventListeners() {
             const payMethod = document.getElementById('cp-payment-method').value;
             const productsSubtotal = productObj.price * requestedQty;
 
-            if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 } };
+            if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 }, nouran: { pickup: 0, local: 30, regional: 60 } };
             if (!appData.shippingRates[branchId]) appData.shippingRates[branchId] = { pickup: 0, local: 30, regional: 60 };
             
             const shippingFee = appData.shippingRates[branchId][deliveryType] || 0;
@@ -362,12 +366,15 @@ function initEventListeners() {
                 return;
             }
 
-            if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {} };
+            if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {}, nouran: {} };
 
             let html = `<h4 class="mt-3">نتائج الاستعلام وموقف الحجوزات:</h4>`;
             
             userBookings.forEach(b => {
-                const bName = (b.branchId === 'dokki') ? 'فرع الدواجن' : 'فرع الحدائق';
+                let bName = 'فرع الدواجن';
+                if (b.branchId === 'haddayek') bName = 'فرع الحدائق';
+                else if (b.branchId === 'nouran') bName = 'محل نوران';
+
                 const qtyDisplay = (b.type === 'حجز منتجات') ? `<span class="badge" style="background:#e67e22; color:#fff;">${b.quantity || 1} قطعة</span>` : `-`;
                 
                 let pCode = b.codePrefix || (b.bookingNumber.includes('-') ? b.bookingNumber.split('-')[0] : 'NOSA');
@@ -468,7 +475,7 @@ function updateClientProductTotalCalculation() {
 
     const subtotal = productObj.price * qty;
 
-    if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 } };
+    if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 }, nouran: { pickup: 0, local: 30, regional: 60 } };
     if (!appData.shippingRates[branchId]) appData.shippingRates[branchId] = { pickup: 0, local: 30, regional: 60 };
 
     const shippingFee = appData.shippingRates[branchId][deliveryType] || 0;
@@ -590,8 +597,11 @@ function renderDashboard() {
             <li><a href="javascript:void(0);" onclick="loadAdminPaymentsSection()"><i class="fa-solid fa-check-circle"></i> مراجعة فودافون كاش</a></li>
         `;
         loadAdminOffersSection();
-    } else if (userRole === 'dokki' || userRole === 'haddayek') {
-        const branchTitle = userRole === 'dokki' ? 'إدارة فرع الدواجن' : 'إدارة فرع الحدائق';
+    } else if (userRole === 'dokki' || userRole === 'haddayek' || userRole === 'nouran') {
+        let branchTitle = 'إدارة فرع الدواجن';
+        if (userRole === 'haddayek') branchTitle = 'إدارة فرع الحدائق';
+        else if (userRole === 'nouran') branchTitle = 'إدارة محل نوران';
+
         if(roleBadge) roleBadge.innerText = branchTitle;
         menu.innerHTML = `
             <li><a href="javascript:void(0);" onclick="loadBranchOffersView('${userRole}')"><i class="fa-solid fa-store"></i> متابعة العروض والحجوزات والنقدية</a></li>
@@ -605,7 +615,10 @@ function loadBranchOffersView(branchId) {
     const area = document.getElementById('dynamic-content-area');
     if (!area) return;
     
-    const bName = branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق';
+    let bName = 'فرع الدواجن';
+    if (branchId === 'haddayek') bName = 'فرع الحدائق';
+    else if (branchId === 'nouran') bName = 'محل نوران';
+
     const branchBookings = appData.bookings.filter(b => b.branchId === branchId);
     const branchServices = appData.services.filter(s => s.branchId === branchId);
     const branchProducts = appData.products.filter(p => p.branchId === branchId);
@@ -618,7 +631,7 @@ function loadBranchOffersView(branchId) {
         activePrefixes.add(pCode.toUpperCase());
     });
 
-    if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {} };
+    if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {}, nouran: {} };
     if (!appData.branchPrefixIndices[branchId]) appData.branchPrefixIndices[branchId] = {};
 
     let prefixPanelsHtml = `<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">`;
@@ -781,7 +794,7 @@ function updateProductOrderStatus(bookingId) {
         booking.orderStatus = newStatus;
         saveData();
         alert(`تم تحديث حالة الأوردر إلى: "${newStatus}" بنجاح!`);
-        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : booking.branchId);
+        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : (currentUser.email.includes('nouran') ? 'nouran' : booking.branchId));
         loadBranchOffersView(currentActiveBranch);
     }
 }
@@ -819,7 +832,11 @@ function resetItemCount(itemId, type) {
             saveData();
             alert('تم تصفير العداد وحذف الحجوزات القديمة بنجاح!');
             
-            const activeBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : null);
+            let activeBranch = null;
+            if (currentUser.email.includes('dokki')) activeBranch = 'dokki';
+            else if (currentUser.email.includes('haddayek')) activeBranch = 'haddayek';
+            else if (currentUser.email.includes('nouran')) activeBranch = 'nouran';
+
             if (activeBranch) {
                 loadBranchOffersView(activeBranch);
             } else {
@@ -836,7 +853,7 @@ function nextPrefixQueue(branchId, pCode) {
         return;
     }
     
-    if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {} };
+    if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {}, nouran: {} };
     if (!appData.branchPrefixIndices[branchId]) appData.branchPrefixIndices[branchId] = {};
     if (appData.branchPrefixIndices[branchId][pCode] === undefined) {
         appData.branchPrefixIndices[branchId][pCode] = 0;
@@ -881,8 +898,8 @@ function confirmBranchCashPayment(bookingId) {
         }
 
         saveData();
-        alert('تم تأكيد الحجز وإصدار الفاتورة وسماعها في إيرادات نوسا وكل الحسابات بنجاح!');
-        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : booking.branchId);
+        alert('تم تأكيد الحجز وإصدار الفاتورة وسماعها في الإيرادات وكل الحسابات بنجاح!');
+        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : (currentUser.email.includes('nouran') ? 'nouran' : booking.branchId));
         loadBranchOffersView(currentActiveBranch);
     }
 }
@@ -891,7 +908,9 @@ function deleteBranchBooking(bookingId) {
     if (confirm('هل تريد حذف هذا الحجز نهائياً؟')) {
         appData.bookings = appData.bookings.filter(b => b.id !== bookingId);
         saveData();
-        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : 'dokki');
+        let currentActiveBranch = 'dokki';
+        if (currentUser.email.includes('haddayek')) currentActiveBranch = 'haddayek';
+        else if (currentUser.email.includes('nouran')) currentActiveBranch = 'nouran';
         loadBranchOffersView(currentActiveBranch);
     }
 }
@@ -909,6 +928,7 @@ function loadAdminOffersSection() {
                         <select id="adm-branch" required>
                             <option value="dokki">فرع الدواجن</option>
                             <option value="haddayek">فرع الحدائق</option>
+                            <option value="nouran">محل نوران</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -935,7 +955,7 @@ function loadAdminOffersSection() {
                         <input type="number" id="adm-max" required placeholder="مثال: 15">
                     </div>
                     <div class="form-group">
-                        <label>بادئة كود التسلسل (مثال: AMANY, DODO, NOSA)</label>
+                        <label>بادئة كود التسلسل (مثال: NOURAN, AMANY, NOSA)</label>
                         <input type="text" id="adm-prefix" required placeholder="اسم الكود بالإنجليزية">
                     </div>
                 </div>
@@ -979,10 +999,18 @@ function renderAdminServicesTable() {
     if (!listDiv) return;
     let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
     appData.services.forEach(s => {
-        html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
+        let bName = 'الدواجن';
+        if (s.branchId === 'haddayek') bName = 'الحدائق';
+        else if (s.branchId === 'nouran') bName = 'نوران';
+
+        html += `<tr><td>خدمة</td><td>${bName}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
     });
     appData.products.forEach(p => {
-        html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
+        let bName = 'الدواجن';
+        if (p.branchId === 'haddayek') bName = 'الحدائق';
+        else if (p.branchId === 'nouran') bName = 'نوران';
+
+        html += `<tr><td>منتج</td><td>${bName}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
     });
     html += `</tbody></table>`;
     listDiv.innerHTML = html;
@@ -1002,13 +1030,17 @@ function loadAdminShippingSection() {
     if (!appData.shippingRates) {
         appData.shippingRates = {
             dokki: { pickup: 0, local: 30, regional: 60 },
-            haddayek: { pickup: 0, local: 30, regional: 60 }
+            haddayek: { pickup: 0, local: 30, regional: 60 },
+            nouran: { pickup: 0, local: 30, regional: 60 }
         };
+    }
+    if (!appData.shippingRates.nouran) {
+        appData.shippingRates.nouran = { pickup: 0, local: 30, regional: 60 };
     }
 
     area.innerHTML = `
         <h2>إدارة أسعار الشحن والتوصيل</h2>
-        <p class="text-muted mt-1">تحديد تكلفة الشحن لكل فرع سواء استلام من الصالون، توصيل داخل القاهرة، أو شحن محافظات.</p>
+        <p class="text-muted mt-1">تحديد تكلفة الشحن لكل فرع سواء استلام من المكان، توصيل داخل القاهرة، أو شحن محافظات.</p>
         
         <div class="card mt-3">
             <h3>أسعار شحن فرع الدواجن</h3>
@@ -1051,6 +1083,27 @@ function loadAdminShippingSection() {
                 <button type="submit" class="btn btn-primary">حفظ أسعار شحن الحدائق</button>
             </form>
         </div>
+
+        <div class="card mt-4">
+            <h3>أسعار شحن محل نوران</h3>
+            <form id="shipping-nouran-form" class="mt-2">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>استلام من المحل</label>
+                        <input type="number" id="nouran-pickup" value="${appData.shippingRates.nouran.pickup}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>توصيل داخل القاهرة</label>
+                        <input type="number" id="nouran-local" value="${appData.shippingRates.nouran.local}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>شحن محافظات</label>
+                        <input type="number" id="nouran-regional" value="${appData.shippingRates.nouran.regional}" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">حفظ أسعار شحن نوران</button>
+            </form>
+        </div>
     `;
 
     document.getElementById('shipping-dokki-form').onsubmit = function(e) {
@@ -1070,6 +1123,15 @@ function loadAdminShippingSection() {
         saveData();
         alert('تم حفظ أسعار شحن فرع الحدائق بنجاح!');
     };
+
+    document.getElementById('shipping-nouran-form').onsubmit = function(e) {
+        e.preventDefault();
+        appData.shippingRates.nouran.pickup = parseFloat(document.getElementById('nouran-pickup').value) || 0;
+        appData.shippingRates.nouran.local = parseFloat(document.getElementById('nouran-local').value) || 0;
+        appData.shippingRates.nouran.regional = parseFloat(document.getElementById('nouran-regional').value) || 0;
+        saveData();
+        alert('تم حفظ أسعار شحن محل نوران بنجاح!');
+    };
 }
 
 function loadAdminWalletsSection() {
@@ -1080,15 +1142,16 @@ function loadAdminWalletsSection() {
         <div class="card mt-3">
             <form id="admin-wallet-form">
                 <div class="form-group">
-                    <label>الفرع</label>
+                    <label>الفرع / المحل</label>
                     <select id="w-branch">
                         <option value="dokki">الدواجن</option>
                         <option value="haddayek">الحدائق</option>
+                        <option value="nouran">نوران</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label>اسم المحفظة</label>
-                    <input type="text" id="w-name" required placeholder="مثال: فودافون كاش فرع الحدائق">
+                    <input type="text" id="w-name" required placeholder="مثال: فودافون كاش محل نوران">
                 </div>
                 <div class="form-group">
                     <label>الرقم</label>
@@ -1134,10 +1197,14 @@ function renderWalletsList() {
         div.innerHTML = '<p class="text-muted">لا توجد محافظ مسجلة حالياً.</p>';
         return;
     }
-    let html = `<table><thead><tr><th>الفرع</th><th>اسم المحفظة</th><th>الرقم</th><th>الإجراء</th></tr></thead><tbody>`;
+    let html = `<table><thead><tr><th>الفرع/المحل</th><th>اسم المحفظة</th><th>الرقم</th><th>الإجراء</th></tr></thead><tbody>`;
     appData.wallets.forEach(w => {
+        let bName = 'الدواجن';
+        if (w.branchId === 'haddayek') bName = 'الحدائق';
+        else if (w.branchId === 'nouran') bName = 'نوران';
+
         html += `<tr>
-            <td>${w.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td>
+            <td>${bName}</td>
             <td>${w.name}</td>
             <td><strong>${w.number}</strong></td>
             <td><button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}')">حذف</button></td>
@@ -1171,7 +1238,7 @@ function renderAdminPaymentsTable() {
         container.innerHTML = '<p>لا توجد تحويلات معلقة.</p>';
         return;
     }
-    let html = `<table><thead><tr><th>العميل</th><th>الكود</th><th>الفرع</th><th>التفاصيل والاستلام</th><th>الإجمالي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>`;
+    let html = `<table><thead><tr><th>العميل</th><th>الكود</th><th>الفرع/المحل</th><th>التفاصيل والاستلام</th><th>الإجمالي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>`;
     walletBookings.forEach(b => {
         let isAlreadyInvoiced = appData.invoices && appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
         let btn = '';
@@ -1182,7 +1249,12 @@ function renderAdminPaymentsTable() {
         }
         let totalDisplayPrice = b.totalAmount || (b.price + (b.shippingCost || 0));
         let detailsText = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><small>(${b.deliveryTypeName}) - ${b.address}</small>` : ''}`;
-        html += `<tr><td>${b.customerName}</td><td><strong>${b.bookingNumber}</strong></td><td>${b.branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق'}</td><td>${detailsText}</td><td><strong>${totalDisplayPrice} ج</strong></td><td><span class="badge">${b.paymentStatus}</span></td><td>${btn}</td></tr>`;
+        
+        let bName = 'فرع الدواجن';
+        if (b.branchId === 'haddayek') bName = 'فرع الحدائق';
+        else if (b.branchId === 'nouran') bName = 'محل نوران';
+
+        html += `<tr><td>${b.customerName}</td><td><strong>${b.bookingNumber}</strong></td><td>${bName}</td><td>${detailsText}</td><td><strong>${totalDisplayPrice} ج</strong></td><td><span class="badge">${b.paymentStatus}</span></td><td>${btn}</td></tr>`;
     });
     html += `</tbody></table>`;
     container.innerHTML = html;
@@ -1218,7 +1290,7 @@ function confirmAdminPayment(bookingId) {
 
         saveData();
         renderAdminPaymentsTable();
-        alert('تم التأكيد وإصدار الفاتورة وسماعها في إيرادات نوسا وكل الحسابات بنجاح!');
+        alert('تم التأكيد وإصدار الفاتورة وسماعها في الإيرادات وكل الحسابات بنجاح!');
     }
 }
 
@@ -1238,8 +1310,9 @@ function loadNosaOverview() {
     
     const dokkiClosedToday = appData.closedDays.some(d => d.branchId === 'dokki' && d.date === todayStr);
     const haddayekClosedToday = appData.closedDays.some(d => d.branchId === 'haddayek' && d.date === todayStr);
+    const nouranClosedToday = appData.closedDays.some(d => d.branchId === 'nouran' && d.date === todayStr);
 
-    let dokkiInc = 0, haddayekInc = 0;
+    let dokkiInc = 0, haddayekInc = 0, nouranInc = 0;
     if (appData.invoices) {
         appData.invoices.forEach(inv => {
             let invBranch = (inv.branchId || '').trim().toLowerCase();
@@ -1249,11 +1322,14 @@ function loadNosaOverview() {
             if (invBranch === 'haddayek' || invBranch.includes('haddayek') || invBranch.includes('الحدائق')) {
                 haddayekInc += Number(inv.price || 0);
             }
+            if (invBranch === 'nouran' || invBranch.includes('nouran') || invBranch.includes('نوران')) {
+                nouranInc += Number(inv.price || 0);
+            }
         });
     }
 
     area.innerHTML = `
-        <h2>اللوحة المالية وأرشيف الفواتير - نوسا (Master Admin)</h2>
+        <h2>اللوحة المالية وأرشيف الفواتير - إدارة عامة</h2>
         <div class="stats-grid mt-3">
             <div class="stat-card">
                 <h4>دخل الدواجن اليوم</h4>
@@ -1265,7 +1341,12 @@ function loadNosaOverview() {
                 <div class="value" style="color:#8e44ad;">${haddayekInc} جنيه</div>
                 <button class="btn btn-danger btn-sm mt-2" onclick="closeBranchDay('haddayek')">${haddayekClosedToday ? 'تم التقفيل اليوم' : 'تقفيل يوم الحدائق'}</button>
             </div>
-            <div class="stat-card"><h4>إجمالي الإيرادات</h4><div class="value" style="color:#27ae60;">${dokkiInc + haddayekInc} جنيه</div></div>
+            <div class="stat-card">
+                <h4>دخل نوران اليوم</h4>
+                <div class="value" style="color:#e67e22;">${nouranInc} جنيه</div>
+                <button class="btn btn-danger btn-sm mt-2" onclick="closeBranchDay('nouran')">${nouranClosedToday ? 'تم التقفيل اليوم' : 'تقفيل يوم نوران'}</button>
+            </div>
+            <div class="stat-card"><h4>إجمالي الإيرادات</h4><div class="value" style="color:#27ae60;">${dokkiInc + haddayekInc + nouranInc} جنيه</div></div>
             <div class="stat-card"><h4>عدد الفواتير المعتمدة</h4><div class="value">${appData.invoices ? appData.invoices.length : 0}</div></div>
         </div>
         <div class="card mt-4">
@@ -1275,11 +1356,14 @@ function loadNosaOverview() {
             </div>
             <div class="table-responsive mt-2">
                 <table>
-                    <thead><tr><th>رقم الفاتورة</th><th>كود الحجز</th><th>العميل</th><th>الفرع</th><th>العنصر والتفاصيل</th><th>المبلغ الإجمالي</th><th>الطريقة</th><th>التاريخ</th><th>إجراء الحذف</th></tr></thead>
+                    <thead><tr><th>رقم الفاتورة</th><th>كود الحجز</th><th>العميل</th><th>الفرع/المحل</th><th>العنصر والتفاصيل</th><th>المبلغ الإجمالي</th><th>الطريقة</th><th>التاريخ</th><th>إجراء الحذف</th></tr></thead>
                     <tbody>
                         ${(!appData.invoices || appData.invoices.length === 0) ? '<tr><td colspan="9">لا توجد فواتير معتمدة بعد</td></tr>' : 
                           appData.invoices.map(inv => {
-                              let bDisplayName = (inv.branchId === 'dokki' || inv.branchId.includes('dokki')) ? 'فرع الدواجن' : 'فرع الحدائق';
+                              let bDisplayName = 'فرع الدواجن';
+                              if (inv.branchId === 'haddayek' || (inv.branchId && inv.branchId.includes('haddayek'))) bDisplayName = 'فرع الحدائق';
+                              else if (inv.branchId === 'nouran' || (inv.branchId && inv.branchId.includes('nouran'))) bDisplayName = 'محل نوران';
+
                               return `<tr>
                               <td><strong>${inv.invoiceId}</strong></td>
                               <td>${inv.bookingNumber}</td>
@@ -1320,7 +1404,10 @@ function clearAllNosaInvoices() {
 }
 
 function closeBranchDay(branchId) {
-    const bName = branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق';
+    let bName = 'فرع الدواجن';
+    if (branchId === 'haddayek') bName = 'فرع الحدائق';
+    else if (branchId === 'nouran') bName = 'محل نوران';
+
     let todayStr = new Date().toLocaleDateString('ar-EG');
     if (confirm(`هل تريد عمل تقفيل اليوم لـ ${bName}؟`)) {
         if (!appData.closedDays) appData.closedDays = [];
