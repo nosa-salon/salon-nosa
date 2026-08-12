@@ -185,72 +185,59 @@ function startFirebaseRealtimeSync() {
 
     try {
         if (!firebase.apps.length) {
-            firebase.initializeApp({
-                databaseURL: FIREBASE_DATABASE_URL
-            });
+            firebase.initializeApp({ databaseURL: FIREBASE_DATABASE_URL });
         }
 
         firebaseDb = firebase.database();
         firebaseDataRef = firebaseDb.ref('salonAppData');
         firebaseSyncStarted = true;
 
-        // أول مرة:
-        // - لو السحابة فاضية: نرفع البيانات المحلية الموجودة بالفعل.
-        // - لو السحابة فيها بيانات: نستخدمها ولا نمسحها بالبيانات المحلية.
         firebaseDataRef.once('value')
             .then(snapshot => {
                 const cloudData = snapshot.val();
 
                 if (!cloudData || typeof cloudData !== 'object' || Object.keys(cloudData).length === 0) {
+                    // Firebase فاضية: نرفع البيانات الحالية مرة واحدة.
                     firebaseApplyingRemote = true;
-                    firebaseDataRef.set(cloneData(appData))
+                    return firebaseDataRef.set(cloneData(appData))
                         .then(() => {
                             firebaseLastSyncedData = cloneData(appData);
                             firebaseInitialLoadComplete = true;
                             firebasePendingSave = false;
-                            console.log('Firebase: تم رفع بيانات المشروع الحالية لأول مرة بدون حذف أي وظيفة.');
-                        })
-                        .catch(error => {
-                            console.error('Firebase initial upload error:', error);
-                            firebaseInitialLoadComplete = true;
+                            console.log('Firebase: تم رفع بيانات المشروع الحالية لأول مرة.');
                         })
                         .finally(() => {
                             firebaseApplyingRemote = false;
                         });
-                } else {
-                    const localBeforeMerge = cloneData(appData);
-                    const safeMergedData = mergeMissingTopLevelData(cloudData, localBeforeMerge);
-
-                    firebaseApplyingRemote = true;
-                    appData = safeMergedData;
-                    localStorage.setItem('salon_app_data', JSON.stringify(appData));
-                    firebaseLastSyncedData = cloneData(cloudData);
-                    firebaseInitialLoadComplete = true;
-                    firebaseApplyingRemote = false;
-
-                    // لو كان فيه حجز/تعديل محلي حصل أثناء قراءة Firebase، نرسل الفرق الآن.
-                    const mergedJson = JSON.stringify(appData);
-                    const cloudJson = JSON.stringify(cloudData);
-                    if (mergedJson !== cloudJson || firebasePendingSave) {
-                        firebasePendingSave = false;
-                        updateFirebaseChangedParts();
-                    }
-
-                    refreshVisibleDataAfterFirebaseUpdate();
-                    console.log('Firebase: تم تحميل البيانات السحابية مع الحفاظ على كل الأقسام الموجودة.');
                 }
+
+                // Firebase هي المصدر الرئيسي للبيانات بعد تفعيل المزامنة.
+                // لا نعمل merge مع localStorage هنا، لأن الـmerge كان يعيد
+                // العناصر التي حذفها المستخدم من Firebase بعد الريفريش.
+                firebaseApplyingRemote = true;
+                appData = cloneData(cloudData) || {};
+                localStorage.setItem('salon_app_data', JSON.stringify(appData));
+                firebaseLastSyncedData = cloneData(appData);
+                firebaseInitialLoadComplete = true;
+                firebaseApplyingRemote = false;
+                firebasePendingSave = false;
+
+                refreshVisibleDataAfterFirebaseUpdate();
+                console.log('Firebase: تم تحميل البيانات السحابية كمصدر أساسي.');
             })
             .catch(error => {
                 console.error('Firebase initial read error:', error);
+                firebaseInitialLoadComplete = true;
+                firebaseApplyingRemote = false;
             });
 
-        // المستمع اللحظي: أي إضافة/تعديل/حذف مقصود يتم سماعه على كل الأجهزة المفتوحة.
+        // Firebase هو المصدر النهائي. أي حذف يتم حفظه كجزء من القسم نفسه
+        // (مثلاً bookings = []) ولذلك لن يرجع بعد refresh.
         firebaseDataRef.on('value', snapshot => {
             const remoteData = snapshot.val();
             if (!remoteData || typeof remoteData !== 'object') return;
             if (!firebaseInitialLoadComplete) return;
 
-            // لو نفس التغيير الذي أرسلناه للتو، لا نعيد تحميل الواجهة بلا داعٍ.
             const remoteJson = JSON.stringify(remoteData);
             const currentJson = JSON.stringify(appData);
 
@@ -260,21 +247,19 @@ function startFirebaseRealtimeSync() {
             }
 
             firebaseApplyingRemote = true;
-
-            // نستخدم بيانات Firebase كما هي، مع إضافة المفاتيح الناقصة فقط من النسخة المحلية.
-            appData = mergeMissingTopLevelData(remoteData, appData);
+            appData = cloneData(remoteData) || {};
             localStorage.setItem('salon_app_data', JSON.stringify(appData));
             firebaseLastSyncedData = cloneData(appData);
-
             firebaseApplyingRemote = false;
 
             refreshVisibleDataAfterFirebaseUpdate();
-            console.log('Firebase: تم استقبال تحديث جديد لحظياً.');
+            console.log('Firebase: تم استقبال التغيير من السحابة، بما في ذلك الحذف والتصفير.');
         });
 
     } catch (error) {
         console.error('Firebase initialization error:', error);
         firebaseSyncStarted = false;
+        firebaseApplyingRemote = false;
     }
 }
 
