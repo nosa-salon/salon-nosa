@@ -69,7 +69,6 @@ onValue(ref(db, 'salon_app_data'), (snapshot) => {
             };
         }
         if (currentUser && userRole) {
-            // تحديث الشاشة الحالية تلقائياً عند حدوث أي تغير سحابي
             if (document.getElementById('dashboard-view').classList.contains('active')) {
                 renderDashboard();
             }
