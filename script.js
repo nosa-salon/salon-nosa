@@ -1005,7 +1005,10 @@ function loadAdminOffersSection() {
 function renderAdminServicesTable() {
     const listDiv = document.getElementById('admin-services-list');
     if (!listDiv) return;
-    let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
+    
+    // تم التعديل هنا لضمان استخدام الجدول المنظم واستخدام app.append / إدراج العناصر للأسفل مباشرة
+    let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody id="admin-services-tbody">`;
+    
     appData.services.forEach(s => {
         let bName = 'الدواجن';
         if (s.branchId === 'haddayek') bName = 'الحدائق';
@@ -1013,6 +1016,7 @@ function renderAdminServicesTable() {
 
         html += `<tr><td>خدمة</td><td>${bName}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
     });
+    
     appData.products.forEach(p => {
         let bName = 'الدواجن';
         if (p.branchId === 'haddayek') bName = 'الحدائق';
@@ -1020,6 +1024,7 @@ function renderAdminServicesTable() {
 
         html += `<tr><td>منتج</td><td>${bName}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
     });
+    
     html += `</tbody></table>`;
     listDiv.innerHTML = html;
 }
