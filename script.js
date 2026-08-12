@@ -61,6 +61,13 @@ onValue(ref(db, 'salon_app_data'), (snapshot) => {
     const data = snapshot.val();
     if (data) {
         appData = data;
+        if (!appData.shippingRates) {
+            appData.shippingRates = {
+                dokki: { pickup: 0, local: 30, regional: 60 },
+                haddayek: { pickup: 0, local: 30, regional: 60 },
+                nouran: { pickup: 0, local: 30, regional: 60 }
+            };
+        }
         if (currentUser && userRole) {
             // تحديث الشاشة الحالية تلقائياً عند حدوث أي تغير سحابي
             if (document.getElementById('dashboard-view').classList.contains('active')) {
@@ -309,7 +316,7 @@ function initEventListeners() {
             if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 }, nouran: { pickup: 0, local: 30, regional: 60 } };
             if (!appData.shippingRates[branchId]) appData.shippingRates[branchId] = { pickup: 0, local: 30, regional: 60 };
             
-            const shippingFee = appData.shippingRates[branchId][deliveryType] || 0;
+            const shippingFee = parseFloat(appData.shippingRates[branchId][deliveryType]) || 0;
             const grandTotal = productsSubtotal + shippingFee;
 
             let deliveryTypeNameText = 'استلام من الصالون';
@@ -478,7 +485,7 @@ function updateClientProductTotalCalculation() {
     if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 }, nouran: { pickup: 0, local: 30, regional: 60 } };
     if (!appData.shippingRates[branchId]) appData.shippingRates[branchId] = { pickup: 0, local: 30, regional: 60 };
 
-    const shippingFee = appData.shippingRates[branchId][deliveryType] || 0;
+    const shippingFee = parseFloat(appData.shippingRates[branchId][deliveryType]) || 0;
     const total = subtotal + shippingFee;
 
     summaryBox.innerHTML = `
@@ -1040,7 +1047,7 @@ function loadAdminShippingSection() {
 
     area.innerHTML = `
         <h2>إدارة أسعار الشحن والتوصيل</h2>
-        <p class="text-muted mt-1">تحديد تكلفة الشحن لكل فرع سواء استلام من المكان، توصيل داخل القاهرة، أو شحن محافظات.</p>
+        <p class="text-muted mt-1">تحديد تكلفة الشحن لكل فرع سواء استلام من المكان، توصيل داخل القاهرة، أو شحن محافظات (تسمع فوراً في حسابات العملاء).</p>
         
         <div class="card mt-3">
             <h3>أسعار شحن فرع الدواجن</h3>
@@ -1112,7 +1119,7 @@ function loadAdminShippingSection() {
         appData.shippingRates.dokki.local = parseFloat(document.getElementById('dokki-local').value) || 0;
         appData.shippingRates.dokki.regional = parseFloat(document.getElementById('dokki-regional').value) || 0;
         saveData();
-        alert('تم حفظ أسعار شحن فرع الدواجن بنجاح!');
+        alert('تم حفظ أسعار شحن فرع الدواجن وتحديثها بنجاح!');
     };
 
     document.getElementById('shipping-haddayek-form').onsubmit = function(e) {
@@ -1121,7 +1128,7 @@ function loadAdminShippingSection() {
         appData.shippingRates.haddayek.local = parseFloat(document.getElementById('haddayek-local').value) || 0;
         appData.shippingRates.haddayek.regional = parseFloat(document.getElementById('haddayek-regional').value) || 0;
         saveData();
-        alert('تم حفظ أسعار شحن فرع الحدائق بنجاح!');
+        alert('تم حفظ أسعار شحن فرع الحدائق وتحديثها بنجاح!');
     };
 
     document.getElementById('shipping-nouran-form').onsubmit = function(e) {
@@ -1130,7 +1137,7 @@ function loadAdminShippingSection() {
         appData.shippingRates.nouran.local = parseFloat(document.getElementById('nouran-local').value) || 0;
         appData.shippingRates.nouran.regional = parseFloat(document.getElementById('nouran-regional').value) || 0;
         saveData();
-        alert('تم حفظ أسعار شحن محل نوران بنجاح!');
+        alert('تم حفظ أسعار شحن محل نوران وتحديثها بنجاح!');
     };
 }
 
