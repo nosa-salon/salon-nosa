@@ -48,259 +48,135 @@ const FIREBASE_DATABASE_URL = 'https://salonnosa-d350f-default-rtdb.europe-west1
 let firebaseDb = null;
 let firebaseDataRef = null;
 let firebaseSyncStarted = false;
+let firebaseReady = false;
 let firebaseApplyingRemote = false;
 let firebaseLastSyncedData = null;
-let firebaseInitialLoadComplete = false;
-let firebasePendingSave = false;
-let firebaseLocalSnapshotAtStart = null;
+let firebaseDirtyKeys = new Set();
+let firebaseLocalBaseline = null;
 
 function cloneData(data) {
-    try {
-        return JSON.parse(JSON.stringify(data));
-    } catch (error) {
-        console.error('Firebase clone error:', error);
-        return null;
-    }
+    try { return JSON.parse(JSON.stringify(data)); }
+    catch (error) { console.error('Firebase clone error:', error); return null; }
 }
 
-function mergeMissingTopLevelData(cloudData, localData) {
-    const cloud = cloneData(cloudData || {}) || {};
-    const local = localData || {};
-    const result = cloneData(cloud) || {};
-
-    // نحافظ على أي قسم موجود في السحابة، ونضيف فقط البيانات المحلية الجديدة
-    // التي لا يوجد لها نفس المعرف. هذا يمنع الحجز المحلي الجديد من الاختفاء
-    // أثناء أول مزامنة، وفي نفس الوقت لا يستبدل بيانات Firebase الموجودة.
-    const arrayKeys = ['services', 'products', 'wallets', 'bookings', 'invoices', 'closedDays'];
-    arrayKeys.forEach(key => {
-        const cloudArr = Array.isArray(cloud[key]) ? cloud[key] : [];
-        const localArr = Array.isArray(local[key]) ? local[key] : [];
-        const merged = cloudArr.slice();
-        const existingIds = new Set();
-
-        cloudArr.forEach(item => {
-            if (!item || typeof item !== 'object') return;
-            const identity = item.id || item.invoiceId || item.bookingNumber || JSON.stringify(item);
-            existingIds.add(String(identity));
-        });
-
-        localArr.forEach(item => {
-            if (!item || typeof item !== 'object') return;
-            const identity = item.id || item.invoiceId || item.bookingNumber || JSON.stringify(item);
-            if (!existingIds.has(String(identity))) {
-                merged.push(cloneData(item));
-                existingIds.add(String(identity));
-            }
-        });
-
-        // لو القسم غير موجود في السحابة وكان موجوداً محلياً، نحافظ عليه بالكامل.
-        if (cloud[key] !== undefined || localArr.length > 0) result[key] = merged;
-    });
-
-    Object.keys(local).forEach(key => {
-        if (result[key] === undefined || result[key] === null) {
-            result[key] = cloneData(local[key]);
-        }
-    });
-
-    return result;
+function asArray(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.keys(value).map(k => value[k]).filter(v => v != null);
+    return [];
 }
 
-function updateFirebaseChangedParts() {
-    if (!firebaseDataRef || !firebaseSyncStarted || firebaseApplyingRemote) return;
-    if (!firebaseInitialLoadComplete) {
-        firebasePendingSave = true;
-        return;
-    }
-
-    const current = cloneData(appData);
-    const previous = firebaseLastSyncedData || {};
-
-    // نرسل فقط الأقسام التي تغيرت، بدلاً من حذف/استبدال أقسام أخرى.
-    const changedParts = {};
-    let hasChanges = false;
-
-    Object.keys(current || {}).forEach(key => {
-        const currentValue = JSON.stringify(current[key]);
-        const previousValue = JSON.stringify(previous[key]);
-
-        if (currentValue !== previousValue) {
-            changedParts[key] = current[key];
-            hasChanges = true;
-        }
-    });
-
-    // في حالة حذف مفتاح بالكامل من appData، لا نحذفه تلقائياً من السحابة.
-    // هذا يمنع أي تعديل غير مقصود من مسح بيانات أخرى.
-    if (!hasChanges) return;
-
-    firebaseDataRef.update(changedParts)
-        .then(() => {
-            firebaseLastSyncedData = cloneData(appData);
-            console.log('Firebase: تم حفظ التغييرات لحظياً بدون لمس الأقسام الأخرى.');
-        })
-        .catch(error => {
-            console.error('Firebase save error:', error);
-            console.warn('سيستمر المشروع محلياً، وسيظل localStorage نسخة احتياطية.');
-        });
+function normalizeAppData(data) {
+    const d = (data && typeof data === 'object') ? data : {};
+    d.services = asArray(d.services);
+    d.products = asArray(d.products);
+    d.wallets = asArray(d.wallets);
+    d.bookings = asArray(d.bookings);
+    d.invoices = asArray(d.invoices);
+    d.closedDays = asArray(d.closedDays);
+    d.branchPrefixIndices = (d.branchPrefixIndices && typeof d.branchPrefixIndices === 'object') ? d.branchPrefixIndices : { dokki:{}, haddayek:{} };
+    d.branchPrefixIndices.dokki = d.branchPrefixIndices.dokki || {};
+    d.branchPrefixIndices.haddayek = d.branchPrefixIndices.haddayek || {};
+    d.shippingRates = (d.shippingRates && typeof d.shippingRates === 'object') ? d.shippingRates : {};
+    if (!d.shippingRates.dokki) d.shippingRates.dokki = {pickup:0,local:30,regional:60};
+    if (!d.shippingRates.haddayek) d.shippingRates.haddayek = {pickup:0,local:30,regional:60};
+    return d;
 }
 
 function saveData() {
-    // النسخة المحلية القديمة تظل محفوظة كما هي.
+    appData = normalizeAppData(appData);
     localStorage.setItem('salon_app_data', JSON.stringify(appData));
 
-    // حفظ التغييرات في Firebase دون استبدال باقي البيانات.
-    updateFirebaseChangedParts();
-}
+    if (!firebaseDataRef || firebaseApplyingRemote) return;
 
-function refreshVisibleDataAfterFirebaseUpdate() {
-    // تحديث الواجهة المفتوحة حالياً بدون إعادة تحميل الصفحة.
-    try {
-        if (!currentUser || !userRole) return;
-
-        if (userRole === 'nosa') {
-            loadNosaOverview();
-        } else if (userRole === 'admin') {
-            const activeSection = document.getElementById('admin-payments-table');
-            const walletsSection = document.getElementById('wallets-admin-list');
-            const servicesSection = document.getElementById('admin-services-list');
-
-            if (activeSection) renderAdminPaymentsTable();
-            if (walletsSection) renderWalletsList();
-            if (servicesSection) renderAdminServicesTable();
-        } else if (userRole === 'dokki' || userRole === 'haddayek') {
-            loadBranchOffersView(userRole);
-        }
-    } catch (error) {
-        console.warn('Firebase UI refresh warning:', error);
-    }
-}
-
-function startFirebaseRealtimeSync() {
-    if (firebaseSyncStarted) return;
-
-    if (typeof firebase === 'undefined') {
-        console.warn('Firebase SDK لم يتم تحميله. سيعمل المشروع بالنسخة المحلية كالمعتاد.');
+    // أثناء التحميل الأول: نسجل الأقسام التي عدّلها المستخدم، ثم ندمجها بعد وصول السحابة.
+    if (!firebaseReady) {
+        const baseline = firebaseLocalBaseline || {};
+        Object.keys(appData).forEach(key => {
+            if (JSON.stringify(appData[key]) !== JSON.stringify(baseline[key])) firebaseDirtyKeys.add(key);
+        });
         return;
     }
 
-    try {
-        if (!firebase.apps.length) {
-            firebase.initializeApp({ databaseURL: FIREBASE_DATABASE_URL });
-        }
+    const snapshot = cloneData(appData);
+    firebaseApplyingRemote = true;
+    firebaseDataRef.set(snapshot)
+        .then(() => { firebaseLastSyncedData = cloneData(snapshot); })
+        .catch(err => console.error('Firebase save error:', err))
+        .finally(() => { firebaseApplyingRemote = false; });
+}
 
+function refreshVisibleDataAfterFirebaseUpdate() {
+    try {
+        if (!currentUser || !userRole) return;
+        if (userRole === 'nosa') loadNosaOverview();
+        else if (userRole === 'admin') {
+            if (document.getElementById('admin-payments-table')) renderAdminPaymentsTable();
+            if (document.getElementById('wallets-admin-list')) renderWalletsList();
+            if (document.getElementById('admin-services-list')) renderAdminServicesTable();
+        } else if (userRole === 'dokki' || userRole === 'haddayek') {
+            loadBranchOffersView(userRole);
+        }
+    } catch (error) { console.error('Firebase UI refresh error:', error); }
+}
+
+function startFirebaseRealtimeSync() {
+    if (firebaseSyncStarted || typeof firebase === 'undefined') return;
+    try {
+        if (!firebase.apps.length) firebase.initializeApp({ databaseURL: FIREBASE_DATABASE_URL });
         firebaseDb = firebase.database();
         firebaseDataRef = firebaseDb.ref('salonAppData');
         firebaseSyncStarted = true;
-        // نحتفظ بلقطة محلية عند بدء المزامنة لمعرفة أي تغييرات حدثت
-        // أثناء تحميل Firebase، خصوصاً إضافة خدمة/منتج من جهاز المسؤول.
-        firebaseLocalSnapshotAtStart = cloneData(appData);
 
-        firebaseDataRef.once('value')
-            .then(snapshot => {
-                const cloudData = snapshot.val();
+        // نأخذ لقطة محلية قبل التحميل حتى نعرف أي تعديلات تمت أثناء الانتظار.
+        const localBeforeLoad = cloneData(appData);
+        firebaseLocalBaseline = cloneData(appData);
 
-                if (!cloudData || typeof cloudData !== 'object' || Object.keys(cloudData).length === 0) {
-                    // Firebase فاضية: نرفع البيانات الحالية مرة واحدة.
-                    firebaseApplyingRemote = true;
-                    return firebaseDataRef.set(cloneData(appData))
-                        .then(() => {
-                            firebaseLastSyncedData = cloneData(appData);
-                            firebaseInitialLoadComplete = true;
-                            firebasePendingSave = false;
-                            console.log('Firebase: تم رفع بيانات المشروع الحالية لأول مرة.');
-                        })
-                        .finally(() => {
-                            firebaseApplyingRemote = false;
-                        });
-                }
+        firebaseDataRef.once('value').then(snapshot => {
+            const cloud = snapshot.val();
+            let baseData;
 
-                // Firebase هي المصدر الرئيسي، لكن لو حصل تعديل محلي أثناء
-                // أول تحميل (مثلاً إضافة خدمة/منتج من المسؤول) نرسل فقط الأقسام
-                // التي تغيرت فعلاً منذ بداية التحميل، بدون إعادة البيانات المحذوفة.
-                const localNow = cloneData(appData) || {};
-                const localAtStart = firebaseLocalSnapshotAtStart || {};
-                const pendingChangedParts = {};
-                let hasPendingChanges = false;
-
-                if (firebasePendingSave) {
-                    const allKeys = new Set([
-                        ...Object.keys(localAtStart || {}),
-                        ...Object.keys(localNow || {})
-                    ]);
-                    allKeys.forEach(key => {
-                        if (JSON.stringify(localAtStart[key]) !== JSON.stringify(localNow[key])) {
-                            pendingChangedParts[key] = localNow[key];
-                            hasPendingChanges = true;
-                        }
-                    });
-                }
-
-                firebaseApplyingRemote = true;
-                appData = cloneData(cloudData) || {};
-
-                if (hasPendingChanges) {
-                    Object.keys(pendingChangedParts).forEach(key => {
-                        appData[key] = cloneData(pendingChangedParts[key]);
-                    });
-                    localStorage.setItem('salon_app_data', JSON.stringify(appData));
-                    firebaseLastSyncedData = cloneData(appData);
-                    firebaseInitialLoadComplete = true;
-                    firebaseApplyingRemote = false;
-
-                    return firebaseDataRef.update(pendingChangedParts)
-                        .then(() => {
-                            firebasePendingSave = false;
-                            firebaseLocalSnapshotAtStart = cloneData(appData);
-                            refreshVisibleDataAfterFirebaseUpdate();
-                            console.log('Firebase: تم حفظ التعديلات التي حدثت أثناء التحميل، بما فيها الخدمات والمنتجات.');
-                        });
-                }
-
-                localStorage.setItem('salon_app_data', JSON.stringify(appData));
-                firebaseLastSyncedData = cloneData(appData);
-                firebaseInitialLoadComplete = true;
-                firebaseApplyingRemote = false;
-                firebasePendingSave = false;
-
-                refreshVisibleDataAfterFirebaseUpdate();
-                console.log('Firebase: تم تحميل البيانات السحابية كمصدر أساسي.');
-            })
-            .catch(error => {
-                console.error('Firebase initial read error:', error);
-                firebaseInitialLoadComplete = true;
-                firebaseApplyingRemote = false;
-            });
-
-        // Firebase هو المصدر النهائي. أي حذف يتم حفظه كجزء من القسم نفسه
-        // (مثلاً bookings = []) ولذلك لن يرجع بعد refresh.
-        firebaseDataRef.on('value', snapshot => {
-            const remoteData = snapshot.val();
-            if (!remoteData || typeof remoteData !== 'object') return;
-            if (!firebaseInitialLoadComplete) return;
-
-            const remoteJson = JSON.stringify(remoteData);
-            const currentJson = JSON.stringify(appData);
-
-            if (remoteJson === currentJson) {
-                firebaseLastSyncedData = cloneData(appData);
-                return;
+            if (!cloud || typeof cloud !== 'object' || Object.keys(cloud).length === 0) {
+                baseData = normalizeAppData(localBeforeLoad);
+            } else {
+                baseData = normalizeAppData(cloneData(cloud));
             }
 
-            firebaseApplyingRemote = true;
-            appData = cloneData(remoteData) || {};
+            // أي قسم عُدّل أثناء تحميل Firebase له الأولوية، حتى لا يضيع إدخال المسؤول.
+            firebaseDirtyKeys.forEach(key => {
+                baseData[key] = cloneData(appData[key]);
+            });
+
+            appData = normalizeAppData(baseData);
             localStorage.setItem('salon_app_data', JSON.stringify(appData));
             firebaseLastSyncedData = cloneData(appData);
+            firebaseReady = true;
+            firebaseDirtyKeys.clear();
+
+            firebaseApplyingRemote = true;
+            return firebaseDataRef.set(cloneData(appData));
+        }).then(() => {
             firebaseApplyingRemote = false;
-
+            firebaseLastSyncedData = cloneData(appData);
             refreshVisibleDataAfterFirebaseUpdate();
-            console.log('Firebase: تم استقبال التغيير من السحابة، بما في ذلك الحذف والتصفير.');
-        });
 
+            // المستمع يبدأ بعد التحميل الأول، وبالتالي لا يستطيع أن يطغى على إضافة جديدة.
+            firebaseDataRef.on('value', snapshot => {
+                if (firebaseApplyingRemote) return;
+                const remote = snapshot.val();
+                if (!remote || typeof remote !== 'object') return;
+                appData = normalizeAppData(remote);
+                localStorage.setItem('salon_app_data', JSON.stringify(appData));
+                firebaseLastSyncedData = cloneData(appData);
+                refreshVisibleDataAfterFirebaseUpdate();
+            });
+        }).catch(error => {
+            firebaseApplyingRemote = false;
+            console.error('Firebase sync error:', error);
+            firebaseReady = true;
+        });
     } catch (error) {
         console.error('Firebase initialization error:', error);
         firebaseSyncStarted = false;
-        firebaseApplyingRemote = false;
     }
 }
 
@@ -1090,66 +966,37 @@ function nextPrefixQueue(branchId, pCode) {
     }
 }
 
-
-// ==========================================================
-// تسجيل الإيراد فور تأكيد الحجز
-// ==========================================================
-function ensureBookingInvoice(booking, paymentMethodLabel) {
-    if (!booking) return false;
-    if (!appData.invoices) appData.invoices = [];
-
-    const bookingNumber = String(booking.bookingNumber || '');
-    let existing = appData.invoices.find(inv =>
-        String(inv.bookingNumber || '') === bookingNumber || inv.bookingId === booking.id
-    );
-
-    const finalPrice = Number(booking.totalAmount || ((Number(booking.price) || 0) + (Number(booking.shippingCost) || 0)));
-    const itemDesc = (booking.type === 'حجز منتجات')
-        ? `${booking.itemName} (الكمية: ${booking.quantity || 1} - شحن: ${booking.deliveryTypeName || 'استلام من الصالون'})`
-        : `${booking.itemName}`;
-
-    if (existing) {
-        // لو الفاتورة موجودة بالفعل، نحدّث بياناتها فقط بدون إنشاء فاتورة مكررة.
-        existing.price = finalPrice;
-        existing.paymentMethod = paymentMethodLabel || existing.paymentMethod;
-        existing.branchId = String(booking.branchId || '').trim().toLowerCase();
-        existing.customerName = booking.customerName;
-        existing.customerPhone = booking.customerPhone;
-        existing.itemName = itemDesc;
-        return false;
-    }
-
-    appData.invoices.push({
-        invoiceId: 'INV-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-        bookingId: booking.id,
-        bookingNumber: booking.bookingNumber,
-        customerName: booking.customerName,
-        customerPhone: booking.customerPhone,
-        branchId: String(booking.branchId || '').trim().toLowerCase(),
-        itemName: itemDesc,
-        price: finalPrice,
-        paymentMethod: paymentMethodLabel || (booking.paymentMethod === 'cash' ? 'نقدي (كاش)' : 'فودافون كاش'),
-        date: new Date().toLocaleDateString('ar-EG')
-    });
-
-    return true;
-}
-
 function confirmBranchCashPayment(bookingId) {
     const booking = appData.bookings.find(b => b.id === bookingId);
     if (booking) {
         booking.paymentStatus = 'تم استلام المبلغ';
-        ensureBookingInvoice(booking, 'نقدي (كاش)');
-
+        if (!appData.invoices) appData.invoices = [];
+        
+        const exists = appData.invoices.some(inv => inv.bookingNumber === booking.bookingNumber);
+        if (!exists) {
+            let itemDesc = (booking.type === 'حجز منتجات') ? `${booking.itemName} (الكمية: ${booking.quantity || 1} - شحن: ${booking.deliveryTypeName})` : `${booking.itemName}`;
+            let finalInvPrice = booking.totalAmount || (booking.price + (booking.shippingCost || 0));
+            appData.invoices.push({
+                invoiceId: 'INV-' + Math.floor(100000 + Math.random() * 900000),
+                bookingNumber: booking.bookingNumber,
+                customerName: booking.customerName,
+                customerPhone: booking.customerPhone,
+                branchId: booking.branchId.trim().toLowerCase(),
+                itemName: itemDesc,
+                price: finalInvPrice,
+                paymentMethod: 'نقدي (كاش)',
+                date: new Date().toLocaleDateString('ar-EG')
+            });
+        }
+        
         let todayStr = new Date().toLocaleDateString('ar-EG');
         if (appData.closedDays) {
             appData.closedDays = appData.closedDays.filter(d => !(d.branchId === booking.branchId && d.date === todayStr));
         }
 
-        // الحجز المؤكد = إيراد فوري في حسابات نوسا وFirebase.
         saveData();
-        alert('تم تأكيد الحجز وإضافة المبلغ فوراً إلى الإيرادات والحسابات.');
-        let currentActiveBranch = currentUser && currentUser.email.includes('dokki') ? 'dokki' : (currentUser && currentUser.email.includes('haddayek') ? 'haddayek' : booking.branchId);
+        alert('تم تأكيد الحجز وإصدار الفاتورة وسماعها في إيرادات نوسا وكل الحسابات بنجاح!');
+        let currentActiveBranch = currentUser.email.includes('dokki') ? 'dokki' : (currentUser.email.includes('haddayek') ? 'haddayek' : booking.branchId);
         loadBranchOffersView(currentActiveBranch);
     }
 }
@@ -1459,18 +1306,33 @@ function confirmAdminPayment(bookingId) {
     const b = appData.bookings.find(item => item.id === bookingId);
     if (b) {
         b.paymentStatus = 'تم استلام المبلغ';
-        ensureBookingInvoice(b, 'فودافون كاش');
-
+        if (!appData.invoices) appData.invoices = [];
+        
+        const exists = appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
+        if (!exists) {
+            let itemDesc = (b.type === 'حجز منتجات') ? `${b.itemName} (الكمية: ${b.quantity || 1} - شحن: ${b.deliveryTypeName})` : `${b.itemName}`;
+            let finalInvPrice = b.totalAmount || (b.price + (b.shippingCost || 0));
+            appData.invoices.push({
+                invoiceId: 'INV-' + Math.floor(100000 + Math.random() * 900000),
+                bookingNumber: b.bookingNumber,
+                customerName: b.customerName,
+                customerPhone: b.customerPhone,
+                branchId: b.branchId.trim().toLowerCase(),
+                itemName: itemDesc,
+                price: finalInvPrice,
+                paymentMethod: 'فودافون كاش',
+                date: new Date().toLocaleDateString('ar-EG')
+            });
+        }
+        
         let todayStr = new Date().toLocaleDateString('ar-EG');
         if (appData.closedDays) {
             appData.closedDays = appData.closedDays.filter(d => !(d.branchId === b.branchId && d.date === todayStr));
         }
 
-        // بمجرد التأكيد، الفاتورة والإيراد يتم حفظهما فوراً في Firebase.
         saveData();
         renderAdminPaymentsTable();
-        alert('تم تأكيد التحويل وإضافة المبلغ فوراً إلى الإيرادات والحسابات.');
-        if (typeof loadNosaOverview === 'function' && userRole === 'nosa') loadNosaOverview();
+        alert('تم التأكيد وإصدار الفاتورة وسماعها في إيرادات نوسا وكل الحسابات بنجاح!');
     }
 }
 
