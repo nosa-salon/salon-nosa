@@ -11,6 +11,11 @@
 </head>
 <body>
 
+    <!-- زر التبديل للشاشات الصغيرة لإظهار القائمة الجانبية -->
+    <button type="button" id="mobile-sidebar-toggle" class="mobile-toggle-btn" style="display: none; position: fixed; top: 15px; right: 15px; z-index: 1100;">
+        <i class="fa-solid fa-bars"></i> القائمة
+    </button>
+
     <!-- 1. واجهة تسجيل الدخول للأدمن ومديري الفروع -->
     <div id="auth-view" class="view active">
         <div class="auth-container">
@@ -87,7 +92,7 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label>اسم العميل</label>
-                                <input type="text" id="cs-name" required placeholder="اسمك العميل">
+                                <input type="text" id="cs-name" required placeholder="اسم العميل">
                             </div>
                             <div class="form-group">
                                 <label>رقم الهاتف (للتتبع)</label>
@@ -144,7 +149,7 @@
                             </div>
                             <div class="form-group">
                                 <label>اسم العميل</label>
-                                <input type="text" id="cp-name" required placeholder="اسمك العميل">
+                                <input type="text" id="cp-name" required placeholder="اسم العميل">
                             </div>
                         </div>
 
@@ -172,9 +177,10 @@
                                     <option value="regional">شحن محافظات ( 90 ج.م)</option>
                                 </select>
                             </div>
-                            <div class="form-group" id="cp-address-group" class="hidden">
+                            <!-- تم تصحيح الـ id والـ class لتوافق سكربت الجافاسكريبت بالكامل -->
+                            <div class="form-group hidden" id="cp-address-container">
                                 <label>عنوان التوصيل بالتفصيل</label>
-                                <textarea id="cp-address" placeholder="رقم الشارع، المنطقة، المدينة..."></textarea>
+                                <textarea id="cp-address" class="form-control" placeholder="رقم الشارع، المنطقة، المدينة..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
                             </div>
                         </div>
 
@@ -225,10 +231,10 @@
     <!-- 3. لوحة تحكم الإدارة والفروع (Dashboard) -->
     <div id="dashboard-view" class="view">
         <div class="dashboard-layout">
-            <aside class="sidebar">
+            <aside class="sidebar" id="app-sidebar">
                 <div class="sidebar-brand">
                     <h3>صالون نوسا</h3>
-                    <span id="user-role-badge" class="badge bg-light text-dark">صلاحية المستخدم</span>
+                    <span id="user-role-badge" class="badge badge-secondary">صلاحية المستخدم</span>
                 </div>
                 <ul id="sidebar-menu-items" class="sidebar-menu"></ul>
                 <div class="sidebar-footer">
@@ -257,7 +263,7 @@
         </div>
     </div>
 
-    <!-- تم التعديل هنا لتتمكن من استخدام Firebase داخل ملف الـ JS -->
+    <!-- ربط ملف الـ JS الرئيسي -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
