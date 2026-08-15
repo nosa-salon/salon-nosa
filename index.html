@@ -61,7 +61,19 @@
                 <button class="tab-btn active" data-tab="tab-services"><i class="fa-solid fa-calendar-check"></i> حجز خدمات الصالون</button>
                 <button class="tab-btn" data-tab="tab-products"><i class="fa-solid fa-bag-shopping"></i> طلب منتجات وعروض</button>
                 <button class="tab-btn" data-tab="tab-track"><i class="fa-solid fa-magnifying-glass-location"></i> تتبع الحجوزات والأوردرات</button>
+                <button class="tab-btn" data-tab="complaints-tab"><i class="fa-solid fa-triangle-exclamation"></i> الشكاوى</button>
+                <button class="tab-btn" data-tab="inquiries-tab"><i class="fa-solid fa-circle-question"></i> الاستفسارات</button>
+                <button class="tab-btn" data-tab="feedback-tab"><i class="fa-solid fa-star"></i> تقييم خدماتي</button>
             </div>
+            <div id="client-account-strip" class="client-account-strip old-design-account">
+                <div><i class="fa-solid fa-user-circle"></i> <strong>بيانات حساب العميل</strong></div>
+                <div class="client-account-fields">
+                    <input id="client-account-name" type="text" placeholder="اسم العميل">
+                    <input id="client-account-phone" type="tel" placeholder="رقم الهاتف">
+                    <button id="save-client-account" type="button" class="btn btn-primary btn-sm">حفظ الحساب</button>
+                </div>
+            </div>
+
 
             <!-- تبويب حجز الخدمات -->
             <div id="tab-services" class="client-tab-content active">
@@ -224,6 +236,69 @@
             </div>
         </div>
     </div>
+
+<div id="complaints-tab" class="client-tab-content">
+<div class="card"><h2><i class="fas fa-exclamation-circle"></i> الشكاوى</h2>
+<p class="text-muted">لو عندك مشكلة في حجز أو أوردر أو خدمة، ابعت التفاصيل وسيتم متابعتها من فريق نوسا.</p>
+<form id="client-complaint-form" class="mt-3">
+<div class="form-row"><div class="form-group"><label>نوع الشكوى</label><select id="complaint-type" required><option>حجز</option><option>أوردر</option><option>خدمة</option><option>دفع</option><option>أخرى</option></select></div>
+<div class="form-group"><label>رقم الحجز / الأوردر (اختياري)</label><input id="complaint-ref" placeholder="مثال: NOSA-028"></div></div>
+<div class="form-group"><label>التفاصيل</label><textarea id="complaint-message" rows="5" required placeholder="اكتب تفاصيل المشكلة..."></textarea></div>
+<button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i> إرسال الشكوى</button></form>
+<div id="complaint-status" class="mt-3"></div></div>
+<div class="card"><h3>متابعة الشكاوى السابقة</h3><div id="client-complaints-list"><p class="text-muted">سيتم عرض الشكاوى وحالتها هنا.</p></div></div>
+</div>
+<div id="inquiries-tab" class="client-tab-content">
+<div class="card"><h2><i class="fas fa-question-circle"></i> الاستفسارات</h2>
+<p class="text-muted">اسأل عن الخدمات أو الأسعار أو المواعيد أو أي شيء يخص الصالون.</p>
+<form id="client-inquiry-form" class="mt-3"><div class="form-group"><label>عنوان الاستفسار</label><input id="inquiry-subject" required placeholder="مثال: هل خدمة العناية متاحة اليوم؟"></div>
+<div class="form-group"><label>الاستفسار</label><textarea id="inquiry-message" rows="5" required placeholder="اكتب سؤالك..."></textarea></div>
+<button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i> إرسال الاستفسار</button></form>
+<div id="inquiry-status" class="mt-3"></div></div>
+<div class="card"><h3>استفساراتي</h3><div id="client-inquiries-list"><p class="text-muted">سيتم عرض الاستفسارات والردود هنا.</p></div></div>
+</div>
+<div id="feedback-tab" class="client-tab-content">
+  <div class="card">
+    <h2><i class="fas fa-star"></i> تقييم خدماتي</h2>
+    <p class="text-muted">قيّم أي خدمة من خدمات صالون نوسا، سواء سبق لك حجزها أم لا. لا يشترط وجود حجز.</p>
+    <div id="feedback-privacy-note" class="wallet-box" style="margin:10px 0">🔒 التقييم يظهر باسم العميل فقط حفاظًا على الخصوصية، ورقم الهاتف لا يظهر مع التقييم.</div>
+<form id="client-feedback-form" class="mt-3">
+      <div class="form-group">
+        <label>الخدمة التي تريد تقييمها</label>
+        <select id="feedback-service" required>
+          <option value="">جاري تحميل خدماتك...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>الحجز المرتبط <span class="text-muted">(اختياري)</span></label>
+        <select id="feedback-booking">
+          <option value="">بدون حجز — تقييم عام للخدمة</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>التقييم</label>
+        <div id="feedback-stars" class="feedback-stars" role="radiogroup" aria-label="التقييم من 1 إلى 5">
+          <button type="button" data-rating="1" aria-label="نجمة واحدة">★</button>
+          <button type="button" data-rating="2" aria-label="نجمتان">★</button>
+          <button type="button" data-rating="3" aria-label="3 نجوم">★</button>
+          <button type="button" data-rating="4" aria-label="4 نجوم">★</button>
+          <button type="button" data-rating="5" aria-label="5 نجوم">★</button>
+        </div>
+        <input id="feedback-rating" type="hidden" value="" required>
+      </div>
+      <div class="form-group">
+        <label>رأيك في الخدمة</label>
+        <textarea id="feedback-message" rows="5" required placeholder="اكتب رأيك وملاحظاتك..."></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i> إرسال التقييم</button>
+    </form>
+    <div id="feedback-status" class="mt-3"></div>
+  </div>
+  <div class="card">
+    <h3>تقييماتي السابقة</h3>
+    <div id="client-feedback-list"><p class="text-muted">سيتم عرض تقييماتك هنا.</p></div>
+  </div>
+</div>
 
     <!-- 3. لوحة تحكم الإدارة والفروع (Dashboard) -->
     <div id="dashboard-view" class="view">
