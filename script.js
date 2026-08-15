@@ -1,5 +1,89 @@
 // ==========================================
 // ملف script.js الكامل والنهائي لتطبيق صالون نوسا (مع إضافة خيارات الشحن والعنوان)
+
+/* ========================= NOSA PRO REALTIME SYNC ========================= */
+const NOSA_PRO_SYNC = {
+    lastSync: 0,
+    timer: null,
+    busy: false,
+    async run(reason = 'update') {
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            // Re-use the existing project functions instead of duplicating Firebase queries.
+            if (typeof refreshVisibleDataAfterFirebaseUpdate === 'function') {
+                refreshVisibleDataAfterFirebaseUpdate();
+            }
+            if (typeof updateAdminDashboard === 'function') {
+                try { await updateAdminDashboard(); } catch (_) {}
+            }
+            if (typeof loadNosaOverview === 'function' && document.getElementById('nosa-view')) {
+                try { await loadNosaOverview(); } catch (_) {}
+            }
+            this.lastSync = Date.now();
+            document.documentElement.dataset.lastSync = String(this.lastSync);
+            const el = document.getElementById('nosa-live-status');
+            if (el) {
+                el.textContent = '● مباشر';
+                el.classList.add('live');
+            }
+        } finally {
+            this.busy = false;
+        }
+    },
+    schedule(reason='update') {
+        clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.run(reason), 80);
+    }
+};
+
+window.NOSA_PRO_SYNC = NOSA_PRO_SYNC;
+
+// Patch common Firebase write methods so the UI updates immediately after successful writes.
+// Existing database listeners remain the source of truth.
+(function patchFirebaseWrites(){
+    const tryPatch = () => {
+        if (!window.firebase || !firebase.database || !firebase.database.DatabaseReference) return false;
+        const proto = firebase.database.DatabaseReference.prototype;
+        ['set','update','remove','transaction'].forEach(method => {
+            const original = proto[method];
+            if (!original || original.__nosaPatched) return;
+            const wrapped = function(...args) {
+                let p;
+                try { p = original.apply(this,args); }
+                catch(e) { throw e; }
+                if (p && typeof p.then === 'function') {
+                    return p.then(result => {
+                        NOSA_PRO_SYNC.schedule(method);
+                        return result;
+                    });
+                }
+                NOSA_PRO_SYNC.schedule(method);
+                return p;
+            };
+            wrapped.__nosaPatched = true;
+            proto[method] = wrapped;
+        });
+        return true;
+    };
+    if (!tryPatch()) {
+        const wait = setInterval(() => { if (tryPatch()) clearInterval(wait); }, 250);
+        setTimeout(() => clearInterval(wait), 15000);
+    }
+})();
+
+// Cross-tab sync: if the same admin opens two tabs, a successful change in one tab
+// prompts the other tab to refresh its visible data.
+window.addEventListener('storage', e => {
+    if (e.key === 'nosa-pro-sync') NOSA_PRO_SYNC.schedule('cross-tab');
+});
+function broadcastNosaSync(reason='update'){
+    try {
+        localStorage.setItem('nosa-pro-sync', JSON.stringify({t:Date.now(),reason}));
+    } catch (_) {}
+}
+
+
 // ==========================================
 
 let currentUser = JSON.parse(sessionStorage.getItem('salon_current_user')) || null;
@@ -33,6 +117,12 @@ let appData = JSON.parse(localStorage.getItem('salon_app_data')) || {
     branchPrefixIndices: {
         dokki: {},
         haddayek: {}
+    },
+    accountPasswords: {
+        "nosa@salon.com": "nosa150180",
+        "dokki@salon.com": "dokki2526",
+        "haddayek@salon.com": "haddayek20240",
+        "admin@salon.com": "admin9050"
     }
 };
 
@@ -76,6 +166,21 @@ function normalizeAppData(data) {
     d.branchPrefixIndices = (d.branchPrefixIndices && typeof d.branchPrefixIndices === 'object') ? d.branchPrefixIndices : { dokki:{}, haddayek:{} };
     d.branchPrefixIndices.dokki = d.branchPrefixIndices.dokki || {};
     d.branchPrefixIndices.haddayek = d.branchPrefixIndices.haddayek || {};
+    d.accountPasswords = (d.accountPasswords && typeof d.accountPasswords === 'object') ? d.accountPasswords : {};
+    // كلمة المرور الفعلية لكل حساب تُقرأ من accountPasswords.
+    // القيم الافتراضية تُستخدم فقط لأول إنشاء للبيانات، وبعد ذلك لا يوجد fallback
+    // إلى validAccounts عند تسجيل الدخول، حتى لا يظل الباسورد القديم صالحًا.
+    const defaultAccountPasswords = {
+        "nosa@salon.com": validAccounts["nosa@salon.com"].pass,
+        "dokki@salon.com": validAccounts["dokki@salon.com"].pass,
+        "haddayek@salon.com": validAccounts["haddayek@salon.com"].pass,
+        "admin@salon.com": validAccounts["admin@salon.com"].pass
+    };
+    Object.keys(defaultAccountPasswords).forEach(email => {
+        if (typeof d.accountPasswords[email] !== 'string' || !d.accountPasswords[email]) {
+            d.accountPasswords[email] = defaultAccountPasswords[email];
+        }
+    });
     d.shippingRates = (d.shippingRates && typeof d.shippingRates === 'object') ? d.shippingRates : {};
     if (!d.shippingRates.dokki) d.shippingRates.dokki = {pickup:0,local:30,regional:60};
     if (!d.shippingRates.haddayek) d.shippingRates.haddayek = {pickup:0,local:30,regional:60};
@@ -88,36 +193,69 @@ function saveData() {
 
     if (!firebaseDataRef || firebaseApplyingRemote) return;
 
-    // أثناء التحميل الأول: نسجل الأقسام التي عدّلها المستخدم، ثم ندمجها بعد وصول السحابة.
-    if (!firebaseReady) {
-        const baseline = firebaseLocalBaseline || {};
-        Object.keys(appData).forEach(key => {
-            if (JSON.stringify(appData[key]) !== JSON.stringify(baseline[key])) firebaseDirtyKeys.add(key);
-        });
-        return;
-    }
+    // مزامنة جزئية: نرسل فقط الأقسام التي تغيّرت، حتى لا يكتب جهازٌ
+    // بيانات قديمة فوق إضافة جديدة قام بها جهاز آخر. هذا مهم خصوصاً للخدمات والمنتجات.
+    const baseline = firebaseReady ? (firebaseLastSyncedData || firebaseLocalBaseline || {}) : (firebaseLocalBaseline || {});
+    const changed = {};
+    Object.keys(appData).forEach(key => {
+        if (JSON.stringify(appData[key]) !== JSON.stringify(baseline[key])) {
+            changed[key] = cloneData(appData[key]);
+            firebaseDirtyKeys.add(key);
+        }
+    });
 
-    const snapshot = cloneData(appData);
+    if (!firebaseReady) return;
+    const keys = Object.keys(changed);
+    if (!keys.length) return;
+
     firebaseApplyingRemote = true;
-    firebaseDataRef.set(snapshot)
-        .then(() => { firebaseLastSyncedData = cloneData(snapshot); })
-        .catch(err => console.error('Firebase save error:', err))
+    firebaseDataRef.update(changed)
+        .then(() => {
+            // نحدّث نسخة المزامنة محلياً لكل قسم أرسلناه فقط.
+            firebaseLastSyncedData = firebaseLastSyncedData || {};
+            keys.forEach(key => { firebaseLastSyncedData[key] = cloneData(appData[key]); });
+            keys.forEach(key => firebaseDirtyKeys.delete(key));
+        })
+        .catch(err => console.error('Firebase partial save error:', err))
         .finally(() => { firebaseApplyingRemote = false; });
 }
 
 function refreshVisibleDataAfterFirebaseUpdate() {
     try {
-        if (!currentUser || !userRole) return;
-        if (userRole === 'nosa') loadNosaOverview();
-        else if (userRole === 'admin') {
-            if (document.getElementById('admin-payments-table')) renderAdminPaymentsTable();
-            if (document.getElementById('wallets-admin-list')) renderWalletsList();
-            if (document.getElementById('admin-services-list')) renderAdminServicesTable();
-        } else if (userRole === 'dokki' || userRole === 'haddayek') {
-            loadBranchOffersView(userRole);
+        // الإدارة: حدّث الشاشة المفتوحة حالياً بدون Reload.
+        if (currentUser && userRole) {
+            if (userRole === 'nosa') loadNosaOverview();
+            else if (userRole === 'admin') {
+                if (document.getElementById('admin-payments-table')) renderAdminPaymentsTable();
+                if (document.getElementById('wallets-admin-list')) renderWalletsList();
+                if (document.getElementById('admin-services-list')) renderAdminServicesTable();
+            } else if (userRole === 'dokki' || userRole === 'haddayek') {
+                loadBranchOffersView(userRole);
+            }
+        }
+
+        // بوابة العميل: أعد تحميل القوائم والرصيد/الأسعار والنتائج المعروضة فور وصول أي تغيير.
+        if (document.getElementById('client-view')?.classList.contains('active')) {
+            const branch = document.getElementById('cs-branch')?.value || 'dokki';
+            loadClientServices(branch);
+            loadClientProducts(document.getElementById('cp-branch')?.value || branch);
+            loadClientWallets(branch, 'cs');
+            loadClientWallets(document.getElementById('cp-branch')?.value || branch, 'cp');
+            updateClientProductTotalCalculation();
+            if (window.NOSA_SERVICE_FEEDBACK) {
+                try { window.NOSA_SERVICE_FEEDBACK.loadBookings?.(); } catch (_) {}
+            }
+
+            const phone = document.getElementById('ct-phone')?.value?.trim();
+            if (phone && document.getElementById('track-result-area')?.innerHTML) {
+                const trackForm = document.getElementById('client-track-form');
+                if (trackForm) trackForm.dispatchEvent(new Event('submit', {cancelable:true}));
+            }
         }
     } catch (error) { console.error('Firebase UI refresh error:', error); }
 }
+window.nosaRefreshNow = () => NOSA_PRO_SYNC.schedule('firebase');
+
 
 function startFirebaseRealtimeSync() {
     if (firebaseSyncStarted || typeof firebase === 'undefined') return;
@@ -153,7 +291,9 @@ function startFirebaseRealtimeSync() {
             firebaseDirtyKeys.clear();
 
             firebaseApplyingRemote = true;
-            return firebaseDataRef.set(cloneData(appData));
+            const initialPublish = {};
+            firebaseDirtyKeys.forEach(key => { initialPublish[key] = cloneData(appData[key]); });
+            return Object.keys(initialPublish).length ? firebaseDataRef.update(initialPublish) : Promise.resolve();
         }).then(() => {
             firebaseApplyingRemote = false;
             firebaseLastSyncedData = cloneData(appData);
@@ -164,7 +304,12 @@ function startFirebaseRealtimeSync() {
                 if (firebaseApplyingRemote) return;
                 const remote = snapshot.val();
                 if (!remote || typeof remote !== 'object') return;
-                appData = normalizeAppData(remote);
+                const incoming = normalizeAppData(cloneData(remote));
+                // لو كان هناك قسم محلي قيد الحفظ، لا نسمح للّقطة الواردة أن تطغى عليه.
+                firebaseDirtyKeys.forEach(key => {
+                    incoming[key] = cloneData(appData[key]);
+                });
+                appData = incoming;
                 localStorage.setItem('salon_app_data', JSON.stringify(appData));
                 firebaseLastSyncedData = cloneData(appData);
                 refreshVisibleDataAfterFirebaseUpdate();
@@ -207,7 +352,17 @@ function initEventListeners() {
             const email = document.getElementById('login-email').value.trim().toLowerCase();
             const password = document.getElementById('login-password').value.trim();
 
-            if (validAccounts[email] && validAccounts[email].pass === password) {
+            // انتظر أول مزامنة من Firebase قبل قبول تسجيل الدخول، حتى لا يتم
+            // استخدام نسخة localStorage قديمة وتسمح مؤقتًا بالباسورد القديم.
+            if (firebaseSyncStarted && !firebaseReady) {
+                alert('جاري التحقق من بيانات الدخول الحالية... حاول مرة أخرى بعد لحظات.');
+                return;
+            }
+
+            // بعد تغيير كلمة المرور من نوسا، الباسورد القديم لا يتم قبوله.
+            // لا نستخدم validAccounts[email].pass كـ fallback أثناء تسجيل الدخول.
+            const storedPass = appData.accountPasswords?.[email];
+            if (validAccounts[email] && typeof storedPass === 'string' && storedPass === password) {
                 currentUser = { email: email };
                 userRole = validAccounts[email].role;
                 sessionStorage.setItem('salon_current_user', JSON.stringify(currentUser));
@@ -234,7 +389,11 @@ function initEventListeners() {
     if (showClientPortal) {
         showClientPortal.onclick = function() {
             switchView('client-view');
+            nosaOpenClientTab?.('client-home');
+            NOSA_PRO_COMM?.saveAccount?.();
+            nosaUpdateHomeSummary?.();
             initClientPortalData();
+            setTimeout(()=>{ if(window.nosaInitCommunicationCenter) nosaInitCommunicationCenter(); if(window.nosaInitServiceFeedback) nosaInitServiceFeedback(); },150);
         };
     }
 
@@ -249,9 +408,10 @@ function initEventListeners() {
         btn.onclick = function(e) {
             document.querySelectorAll('.client-tabs .tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.client-tab-content').forEach(c => c.classList.remove('active'));
-            e.target.classList.add('active');
-            const targetId = e.target.getAttribute('data-tab');
-            document.getElementById(targetId).classList.add('active');
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-tab');
+            document.getElementById(targetId)?.classList.add('active');
+            nosaOpenClientTab?.(targetId);
         };
     });
 
@@ -341,8 +501,8 @@ function initEventListeners() {
             if (serviceObj.currentCount === undefined) serviceObj.currentCount = 0;
             if (!serviceObj.codePrefix) serviceObj.codePrefix = 'NOSA';
 
-            serviceObj.currentCount += 1;
-            serviceObj.max -= 1;
+            serviceObj.currentCount = Math.max(0, Number(serviceObj.currentCount || 0) + 1);
+            serviceObj.max = Math.max(0, Number(serviceObj.max || 0) - 1);
 
             let cleanPrefix = serviceObj.codePrefix.trim().toUpperCase();
             let uniqueBookingNumber = `${cleanPrefix}-${serviceObj.currentCount}`;
@@ -407,8 +567,8 @@ function initEventListeners() {
             if (!productObj.codePrefix) productObj.codePrefix = 'NOSA';
 
             let nextSeq = productObj.currentCount + 1;
-            productObj.currentCount += requestedQty;
-            productObj.qty -= requestedQty;
+            productObj.currentCount = Math.max(0, Number(productObj.currentCount || 0) + requestedQty);
+            productObj.qty = Math.max(0, Number(productObj.qty || 0) - requestedQty);
 
             let cleanPrefix = productObj.codePrefix.trim().toUpperCase();
             let uniqueBookingNumber = `${cleanPrefix}-${nextSeq}`;
@@ -466,10 +626,28 @@ function initEventListeners() {
             const selectedBranch = document.getElementById('ct-branch').value;
             const resultDiv = document.getElementById('track-result-area');
             
-            let userBookings = appData.bookings.filter(b => b.customerPhone === phone);
+            const normalizePhone = v => String(v || '').replace(/[^0-9+]/g, '').trim();
+            const searchPhone = normalizePhone(phone);
+            let userBookings = (Array.isArray(appData.bookings) ? appData.bookings : []).filter(b => {
+                const bp = normalizePhone(b.customerPhone || b.phone);
+                return bp === searchPhone || (bp && searchPhone && bp.endsWith(searchPhone)) || (searchPhone && searchPhone.endsWith(bp));
+            });
             if (selectedBranch) {
-                userBookings = userBookings.filter(b => b.branchId === selectedBranch);
+                userBookings = userBookings.filter(b => {
+                    const bid = String(b.branchId || b.branch || '').toLowerCase();
+                    return bid === String(selectedBranch).toLowerCase() ||
+                           (selectedBranch === 'haddayek' && (bid.includes('hadd') || bid.includes('حد'))) ||
+                           (selectedBranch === 'dokki' && (bid.includes('dok') || bid.includes('دق')));
+                });
             }
+            // لا نعرض الحجز أكثر من مرة إذا كان محفوظًا بأكثر من مرجع.
+            const seen = new Set();
+            userBookings = userBookings.filter(b => {
+                const key = String(b.id || b.bookingNumber || '') + '|' + String(b.customerPhone || b.phone || '');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
 
             if (userBookings.length === 0) {
                 resultDiv.innerHTML = '<p class="text-danger mt-3">لا توجد حجوزات نشطة مطابقة حالياً لهذا الرقم.</p>';
@@ -521,6 +699,7 @@ function initEventListeners() {
                 if (b.type === 'حجز خدمة') {
                     dynamicDetailsHtml = `
                         <p><strong>الكود الحالي على الكرسي لكود (${pCode}):</strong> <span style="color:#c0392b; font-size:1.2rem; font-weight:bold;">${currentServingCode}</span></p>
+                        ${(b.chairNumber || b.chair || b.seatNumber) ? `<p><strong>رقم الكرسي:</strong> ${b.chairNumber || b.chair || b.seatNumber}</p>` : ''}
                         <p class="mt-2"><strong>حالة دورك:</strong> ${queueStatusText}</p>
                     `;
                 } else {
@@ -533,15 +712,14 @@ function initEventListeners() {
                     `;
                 }
 
-                let totalDisplayPrice = b.totalAmount || (b.price + (b.shippingCost || 0));
-
+    
                 html += `
                 <div class="card mt-3" style="border-right: 5px solid var(--primary-dark);">
                     <p><strong>الفرع:</strong> ${bName}</p>
                     <p><strong>كود الحجز:</strong> <span style="color:var(--primary-dark); font-size:1.3rem;">${b.bookingNumber}</span> (بادئة الكود: <strong>${pCode}</strong>)</p>
                     <p><strong>الخدمة/المنتج:</strong> ${b.itemName} (${b.type})</p>
                     <p><strong>الكمية:</strong> ${qtyDisplay}</p>
-                    <p><strong>إجمالي المطلوب (شامل الشحن إن وجد):</strong> <span style="color:#c0392b; font-weight:bold;">${totalDisplayPrice} جنيه</span></p>
+                    <p><strong>إجمالي المطلوب (شامل الشحن إن وجد):</strong> <span style="color:#c0392b; font-weight:bold;">${Number(b.totalAmount ?? b.price ?? 0) + Number(b.shippingCost || 0)} جنيه</span></p>
                     <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
                     ${dynamicDetailsHtml}
                     <p class="mt-2 text-muted" style="font-size:0.9rem;">حالة الدفع: ${b.paymentStatus} (${b.paymentMethod === 'cash' ? 'كاش' : 'فودافون كاش'})</p>
@@ -681,6 +859,11 @@ function showTicketModal(bData) {
     document.getElementById('ticket-modal').classList.remove('hidden');
 }
 
+function canViewPrices() {
+    // الأسعار المالية التفصيلية متاحة لنوسا Master Admin فقط.
+    return userRole === 'nosa';
+}
+
 function renderDashboard() {
     switchView('dashboard-view');
     const roleBadge = document.getElementById('user-role-badge');
@@ -692,7 +875,10 @@ function renderDashboard() {
         if(roleBadge) roleBadge.innerText = 'Master Admin (نوسا)';
         menu.innerHTML = `
             <li><a href="javascript:void(0);" onclick="loadNosaOverview()"><i class="fa-solid fa-chart-pie"></i> اللوحة المالية والفواتير والأرشيف</a></li>
+            <li><a href="javascript:void(0);" onclick="loadAdminOffersSection()"><i class="fa-solid fa-tags"></i> إدارة الخدمات والمنتجات والأسعار</a></li>
             <li><a href="javascript:void(0);" onclick="loadAdminShippingSection()"><i class="fa-solid fa-truck"></i> إدارة أسعار الشحن والتوصيل</a></li>
+            <li><a href="javascript:void(0);" onclick="loadNosaCommunicationsCenter()"><i class="fa-solid fa-headset"></i> شكاوى العملاء والاستفسارات والآراء</a></li>
+            <li><a href="javascript:void(0);" onclick="loadNosaAccountSecurity()"><i class="fa-solid fa-key"></i> إدارة كلمات مرور الحسابات</a></li>
         `;
         loadNosaOverview();
     } else if (userRole === 'admin') {
@@ -702,6 +888,7 @@ function renderDashboard() {
             <li><a href="javascript:void(0);" onclick="loadAdminWalletsSection()"><i class="fa-solid fa-wallet"></i> أرقام فودافون كاش</a></li>
             <li><a href="javascript:void(0);" onclick="loadAdminShippingSection()"><i class="fa-solid fa-truck"></i> إدارة أسعار الشحن والتوصيل</a></li>
             <li><a href="javascript:void(0);" onclick="loadAdminPaymentsSection()"><i class="fa-solid fa-check-circle"></i> مراجعة فودافون كاش</a></li>
+            <li><a href="javascript:void(0);" onclick="loadNosaCommunicationsCenter()"><i class="fa-solid fa-headset"></i> شكاوى العملاء والاستفسارات والآراء</a></li>
         `;
         loadAdminOffersSection();
     } else if (userRole === 'dokki' || userRole === 'haddayek') {
@@ -771,7 +958,7 @@ function loadBranchOffersView(branchId) {
             <div class="table-responsive mt-2">
                 <table>
                     <thead>
-                        <tr><th>النوع</th><th>الاسم</th><th>السعر</th><th>الكمية المتاحة وتم الحجز</th><th>البادئة</th><th>تصفير العداد</th></tr>
+                        <tr><th>النوع</th><th>الاسم</th><th>الكمية المتاحة وتم الحجز</th><th>البادئة</th><th>تصفير العداد</th></tr>
                     </thead>
                     <tbody>
     `;
@@ -781,7 +968,6 @@ function loadBranchOffersView(branchId) {
             html += `<tr>
                 <td><span class="badge" style="background:#2980b9; color:#fff;">خدمة</span></td>
                 <td>${s.name}</td>
-                <td>${s.price} جنيه</td>
                 <td><strong>المتبقي:</strong> ${s.max} | <strong>تم حجز:</strong> ${s.currentCount || 0}</td>
                 <td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td>
                 <td><button class="btn btn-danger btn-sm" onclick="resetItemCount('${s.id}', 'service')"><i class="fa-solid fa-rotate-left"></i> تصفير عداد الحجز</button></td>
@@ -791,14 +977,13 @@ function loadBranchOffersView(branchId) {
             html += `<tr>
                 <td><span class="badge" style="background:#8e44ad; color:#fff;">منتج</span></td>
                 <td>${p.name}</td>
-                <td>${p.price} جنيه</td>
                 <td><strong>المتبقي بالمخزن:</strong> ${p.qty} | <strong>تم حجز:</strong> ${p.currentCount || 0}</td>
                 <td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td>
                 <td><button class="btn btn-danger btn-sm" onclick="resetItemCount('${p.id}', 'product')"><i class="fa-solid fa-rotate-left"></i> تصفير عداد الحجز</button></td>
             </tr>`;
         });
     } else {
-        html += `<tr><td colspan="6">لا توجد خدمات أو منتجات مضافة لهذا الفرع بعد.</td></tr>`;
+        html += `<tr><td colspan="5">لا توجد خدمات أو منتجات مضافة لهذا الفرع بعد.</td></tr>`;
     }
 
     html += `
@@ -821,7 +1006,6 @@ function loadBranchOffersView(branchId) {
                             <th>كود الحجز</th>
                             <th>التفاصيل والكمية</th>
                             <th>الاستلام والعنوان</th>
-                            <th>المبلغ الإجمالي</th>
                             <th>الدفع</th>
                             <th>حالة الطلب / التجهيز</th>
                             <th>الإجراء</th>
@@ -864,14 +1048,12 @@ function loadBranchOffersView(branchId) {
 
             let detailsCol = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><span class="badge" style="background:#e67e22; color:#fff;">${b.quantity || 1} قطعة</span>` : ''}`;
             let deliveryCol = b.type === 'حجز منتجات' ? `<strong>${b.deliveryTypeName}</strong><br><small style="color:#666;">العنوان: ${b.address}</small>` : `-`;
-            let totalDisplayPrice = b.totalAmount || (b.price + (b.shippingCost || 0));
 
             html += `<tr>
                 <td>${b.customerName}<br><small>${b.customerPhone}</small></td>
                 <td><strong>${b.bookingNumber}</strong></td>
                 <td>${detailsCol}</td>
                 <td>${deliveryCol}</td>
-                <td><strong>${totalDisplayPrice} ج</strong></td>
                 <td>${b.paymentMethod === 'cash' ? 'كاش' : 'فودافون كاش'}</td>
                 <td><span class="badge" style="background:#16a085; color:#fff;">${b.orderStatus || (b.type === 'حجز منتجات' ? 'يتم تجهيز الأوردر' : 'داخل الصالون')}</span></td>
                 <td>${actionBtn}</td>
@@ -1091,12 +1273,15 @@ function loadAdminOffersSection() {
 function renderAdminServicesTable() {
     const listDiv = document.getElementById('admin-services-list');
     if (!listDiv) return;
-    let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th><th>السعر</th><th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
+    const priceHead = canViewPrices() ? '<th>السعر</th>' : '';
+    let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th>${priceHead}<th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
     appData.services.forEach(s => {
-        html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td><td>${s.price}</td><td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
+        const priceCell = canViewPrices() ? `<td>${s.price} جنيه</td>` : '';
+        html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td>${priceCell}<td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
     });
     appData.products.forEach(p => {
-        html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td><td>${p.price}</td><td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
+        const priceCell = canViewPrices() ? `<td>${p.price} جنيه</td>` : '';
+        html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td>${priceCell}<td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
     });
     html += `</tbody></table>`;
     listDiv.innerHTML = html;
@@ -1285,7 +1470,7 @@ function renderAdminPaymentsTable() {
         container.innerHTML = '<p>لا توجد تحويلات معلقة.</p>';
         return;
     }
-    let html = `<table><thead><tr><th>العميل</th><th>الكود</th><th>الفرع</th><th>التفاصيل والاستلام</th><th>الإجمالي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>`;
+    let html = `<table><thead><tr><th>العميل</th><th>الكود</th><th>الفرع</th><th>التفاصيل والاستلام</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>`;
     walletBookings.forEach(b => {
         let isAlreadyInvoiced = appData.invoices && appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
         let btn = '';
@@ -1294,9 +1479,8 @@ function renderAdminPaymentsTable() {
         } else {
             btn = `<button class="btn btn-danger btn-sm" onclick="deleteAdminBooking('${b.id}')">حذف</button>`;
         }
-        let totalDisplayPrice = b.totalAmount || (b.price + (b.shippingCost || 0));
         let detailsText = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><small>(${b.deliveryTypeName}) - ${b.address}</small>` : ''}`;
-        html += `<tr><td>${b.customerName}</td><td><strong>${b.bookingNumber}</strong></td><td>${b.branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق'}</td><td>${detailsText}</td><td><strong>${totalDisplayPrice} ج</strong></td><td><span class="badge">${b.paymentStatus}</span></td><td>${btn}</td></tr>`;
+        html += `<tr><td>${b.customerName}</td><td><strong>${b.bookingNumber}</strong></td><td>${b.branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق'}</td><td>${detailsText}</td><td><span class="badge">${b.paymentStatus}</span></td><td>${btn}</td></tr>`;
     });
     html += `</tbody></table>`;
     container.innerHTML = html;
@@ -1444,3 +1628,424 @@ function closeBranchDay(branchId) {
         loadNosaOverview();
     }
 }
+
+/* ========================= CLIENT BOOKINGS / ORDERS REALTIME SYNC ========================= */
+(function(){
+  let lastClientSyncHash = '';
+  function clientDataHash(){
+    try {
+      return JSON.stringify({
+        bookings: appData && appData.bookings ? appData.bookings : [],
+        services: appData && appData.services ? appData.services : [],
+        products: appData && appData.products ? appData.products : []
+      });
+    } catch(e){ return String(Date.now()); }
+  }
+
+  function refreshClientInquiryViews(){
+    const clientView = document.getElementById('client-view');
+    if(!clientView || clientView.style.display === 'none') return;
+
+    // Re-render the existing client portal widgets without changing their layout.
+    try {
+      if(typeof loadClientBookings === 'function') loadClientBookings();
+    } catch(e){ console.warn('client bookings refresh',e); }
+
+    try {
+      if(typeof loadClientOrders === 'function') loadClientOrders();
+    } catch(e){ console.warn('client orders refresh',e); }
+
+    try {
+      if(typeof loadClientTracking === 'function') loadClientTracking();
+    } catch(e){ console.warn('client tracking refresh',e); }
+
+    try {
+      if(typeof renderClientBookings === 'function') renderClientBookings();
+    } catch(e){ console.warn('render client bookings',e); }
+
+    try {
+      if(typeof renderClientOrders === 'function') renderClientOrders();
+    } catch(e){ console.warn('render client orders',e); }
+
+    // These are harmless if the project version does not define them.
+    try {
+      if(typeof initClientPortalData === 'function') initClientPortalData();
+    } catch(e){ console.warn('client portal refresh',e); }
+  }
+
+  function startClientRealtimeRefresh(){
+    const h = clientDataHash();
+    if(h === lastClientSyncHash) return;
+    lastClientSyncHash = h;
+    refreshClientInquiryViews();
+  }
+
+  // Hook the project's existing data-update path, regardless of which realtime
+  // implementation V18 uses.
+  const oldRefresh = window.refreshUIFromFirebase;
+  if(typeof oldRefresh === 'function'){
+    window.refreshUIFromFirebase = function(){
+      const r = oldRefresh.apply(this, arguments);
+      setTimeout(startClientRealtimeRefresh, 0);
+      setTimeout(startClientRealtimeRefresh, 120);
+      return r;
+    };
+  }
+
+  // Firebase listener fallback: listen to the project's main data node when available.
+  function attach(){
+    try{
+      if(window.firebase && firebase.database){
+        const refs = [
+          firebase.database().ref('salon_app_data'),
+          firebase.database().ref('appData'),
+          firebase.database().ref('nosa_app_data')
+        ];
+        refs.forEach(ref=>{
+          ref.on('value', snap=>{
+            if(!snap.exists()) return;
+            const val = snap.val();
+            if(val && typeof val === 'object'){
+              // Only merge fields that exist; never erase local fields from a partial node.
+              if(val.bookings) appData.bookings = Array.isArray(val.bookings) ? val.bookings : Object.values(val.bookings);
+              if(val.services) appData.services = Array.isArray(val.services) ? val.services : Object.values(val.services);
+              if(val.products) appData.products = Array.isArray(val.products) ? val.products : Object.values(val.products);
+              if(val.invoices) appData.invoices = Array.isArray(val.invoices) ? val.invoices : Object.values(val.invoices);
+              setTimeout(startClientRealtimeRefresh, 0);
+            }
+          });
+        });
+      }
+    }catch(e){ console.warn('client realtime listener',e); }
+  }
+
+  window.addEventListener('load', attach);
+  document.addEventListener('DOMContentLoaded', ()=>setTimeout(attach, 300));
+  window.NOSA_CLIENT_REALTIME = { refresh: refreshClientInquiryViews };
+})();
+
+
+/* ========================= NOSA PRO COMMUNICATION CENTER — V10 ========================= */
+const NOSA_PRO_COMM={
+ root:()=>window.firebase&&firebase.database?firebase.database().ref('client_communications'):null,
+ identity(){
+   let uid=''; try{uid=(window.firebase&&firebase.auth&&firebase.auth().currentUser?.uid)||''}catch(_){ }
+   const name=(document.getElementById('client-account-name')?.value||localStorage.getItem('nosa_client_name')||'').trim();
+   const phone=(document.getElementById('client-account-phone')?.value||localStorage.getItem('nosa_client_phone')||'').trim();
+   const branch=(document.getElementById('cs-branch')?.value||localStorage.getItem('nosa_client_branch')||'').trim();
+   const accountKey=uid || (phone ? 'phone_'+phone.replace(/\D/g,'') : 'anonymous');
+   return {uid,name,phone,branch,accountKey};
+ },
+ saveAccount(){
+   const a=this.identity();
+   if(a.name) localStorage.setItem('nosa_client_name',a.name);
+   if(a.phone) localStorage.setItem('nosa_client_phone',a.phone);
+   if(a.branch) localStorage.setItem('nosa_client_branch',a.branch);
+   const n=document.getElementById('client-account-name'),p=document.getElementById('client-account-phone');
+   if(n && !n.value && a.name) n.value=a.name;
+   if(p && !p.value && a.phone) p.value=a.phone;
+   return a;
+ },
+ esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')},
+ saveLocal(kind,item){try{const k='nosa_'+kind;const a=JSON.parse(localStorage.getItem(k)||'[]');a.unshift(item);localStorage.setItem(k,JSON.stringify(a.slice(0,100)))}catch(_){ }},
+ localItems(kind){try{return JSON.parse(localStorage.getItem('nosa_'+kind)||'[]')}catch(_){return[]}},
+ render(id,items,empty){const el=document.getElementById(id);if(!el)return;if(!items.length){el.innerHTML=`<p class="text-muted">${empty}</p>`;return}el.innerHTML=items.map(x=>`<div class="comm-item"><div><b>${this.esc(x.subject||x.type||x.serviceName||'طلب')}</b><span>${this.esc(x.status||'جديد')}</span></div><p>${this.esc(x.message||'')}</p><small>${new Date(x.createdAt||Date.now()).toLocaleString('ar-EG')}</small>${x.reply?`<div class="comm-reply"><b>رد الإدارة:</b> ${this.esc(x.reply)}</div>`:''}</div>`).join('')},
+ async submit(kind,payload){
+   const a=this.saveAccount();
+   if(!a.phone) throw new Error('اكتب رقم الهاتف في بيانات حساب العميل أولاً، ثم اضغط حفظ الحساب.');
+   const item={id:'COM-'+Date.now(),kind,...payload,...a,status:'جديد',createdAt:Date.now(),source:'client'};
+   this.saveLocal(kind,item);
+   const ref=this.root();
+   if(ref) await ref.child(kind).child(item.id).set(item);
+   return item;
+ },
+ async loadForAccount(kind,target){
+   const a=this.saveAccount(), ref=this.root();
+   const local=this.localItems(kind).filter(x=>x.accountKey===a.accountKey || (a.phone&&x.phone===a.phone));
+   if(!ref){this.render(target,local,'لا توجد طلبات سابقة.');return}
+   try{
+     const s=await ref.child(kind).orderByChild('accountKey').equalTo(a.accountKey).limitToLast(100).once('value');
+     const all=[...local];s.forEach(c=>{const x=c.val();if(!all.some(y=>y.id===x.id))all.push(x)});all.sort((x,y)=>(y.createdAt||0)-(x.createdAt||0));this.render(target,all,'لا توجد طلبات سابقة.');
+     ref.child(kind).orderByChild('accountKey').equalTo(a.accountKey).on('value',snap=>{const live=[];snap.forEach(c=>live.push(c.val()));live.sort((x,y)=>(y.createdAt||0)-(x.createdAt||0));this.render(target,live,'لا توجد طلبات سابقة.')});
+   }catch(_){this.render(target,local,'تعذر تحميل الطلبات من قاعدة البيانات حالياً.')}
+ }
+};
+function nosaInitCommunicationCenter(){
+ const save=document.getElementById('save-client-account');
+ if(save&&!save.dataset.ready){save.dataset.ready='1';save.onclick=()=>{const a=NOSA_PRO_COMM.saveAccount();nosaUpdateHomeSummary?.();nosaInitCommunicationCenter.refresh();alert(a.phone?'تم حفظ بيانات الحساب وربط الشكاوى والاستفسارات والتقييم بهذا الحساب.':'اكتب رقم الهاتف أولاً ثم احفظ الحساب.')}}
+ NOSA_PRO_COMM.saveAccount();
+ const c=document.getElementById('client-complaint-form');
+ if(c&&!c.dataset.ready){c.dataset.ready='1';c.addEventListener('submit',async e=>{e.preventDefault();const status=document.getElementById('complaint-status');try{const x=await NOSA_PRO_COMM.submit('complaints',{type:document.getElementById('complaint-type').value,reference:document.getElementById('complaint-ref').value.trim(),message:document.getElementById('complaint-message').value.trim()});status.innerHTML=`<div class="wallet-box">تم إرسال الشكوى <b>${x.id}</b> بنجاح، وستظهر للإدارة ونوسا ماستر.</div>`;c.reset();nosaInitCommunicationCenter.refresh();nosaUpdateHomeSummary?.()}catch(err){status.innerHTML=`<div class="comm-error">${NOSA_PRO_COMM.esc(err.message||err)}</div>`}})}
+ const q=document.getElementById('client-inquiry-form');
+ if(q&&!q.dataset.ready){q.dataset.ready='1';q.addEventListener('submit',async e=>{e.preventDefault();const status=document.getElementById('inquiry-status');try{const x=await NOSA_PRO_COMM.submit('inquiries',{subject:document.getElementById('inquiry-subject').value.trim(),message:document.getElementById('inquiry-message').value.trim()});status.innerHTML=`<div class="wallet-box">تم إرسال الاستفسار <b>${x.id}</b> بنجاح، وستظهر للإدارة ونوسا ماستر.</div>`;q.reset();nosaInitCommunicationCenter.refresh();nosaUpdateHomeSummary?.()}catch(err){status.innerHTML=`<div class="comm-error">${NOSA_PRO_COMM.esc(err.message||err)}</div>`}})}
+ nosaInitCommunicationCenter.refresh=()=>{NOSA_PRO_COMM.loadForAccount('complaints','client-complaints-list');NOSA_PRO_COMM.loadForAccount('inquiries','client-inquiries-list');if(window.NOSA_SERVICE_FEEDBACK){NOSA_SERVICE_FEEDBACK.loadBookings?.();NOSA_SERVICE_FEEDBACK.loadMine?.()}};
+ nosaInitCommunicationCenter.refresh();
+}
+window.nosaInitCommunicationCenter=nosaInitCommunicationCenter;
+/* ========================= NOSA SERVICE FEEDBACK — V10 ========================= */
+const NOSA_SERVICE_FEEDBACK={
+ bookings:[],
+ accountKey(){return NOSA_PRO_COMM.saveAccount().accountKey},
+ ref(){return window.firebase&&firebase.database?firebase.database().ref('client_communications/feedback'):null},
+ async loadBookings(){
+   const a=NOSA_PRO_COMM.saveAccount(); let arr=[];
+   const candidates=['clientBookings','myBookings','bookings'];
+   for(const k of candidates){if(Array.isArray(window[k])&&window[k].length){arr=window[k].slice();break}}
+   if(!arr.length && Array.isArray(appData?.bookings)) arr=appData.bookings.slice();
+   if(!arr.length && window.localStorage){
+     for(const k of ['appData','nosa_appData']){
+       try{const raw=localStorage.getItem(k);const obj=raw?JSON.parse(raw):null;if(obj&&Array.isArray(obj.bookings)&&obj.bookings.length){arr=obj.bookings.slice();break}}catch(_){ }
+     }
+   }
+   if(!arr.length && window.firebase&&firebase.database){
+     try{const snap=await firebase.database().ref('bookings').orderByChild('accountKey').equalTo(a.accountKey).once('value');snap.forEach(c=>arr.push({...c.val(),id:c.key}))}catch(_){ }
+     if(!arr.length&&a.phone){
+       try{const snap=await firebase.database().ref('bookings').orderByChild('customerPhone').equalTo(a.phone).once('value');snap.forEach(c=>arr.push({...c.val(),id:c.key}))}catch(_){ }
+       try{const snap=await firebase.database().ref('bookings').orderByChild('phone').equalTo(a.phone).once('value');snap.forEach(c=>arr.push({...c.val(),id:c.key}))}catch(_){ }
+     }
+   }
+   this.bookings=arr.filter(x=>{
+     if(!x || x.type==='حجز منتجات') return false;
+     const hasService=!!(x.serviceName||x.service||x.itemName||x.name);
+     if(!hasService) return false;
+     if(a.phone){const p=String(x.customerPhone||x.phone||'').trim();if(p&&p!==a.phone)return false;}
+     return true;
+   });
+   this.populate();
+ },
+ populate(){
+   const bs=document.getElementById('feedback-booking'),ss=document.getElementById('feedback-service');
+   if(!bs||!ss)return;
+   const rowsMap=new Map();
+   this.bookings.forEach((b,i)=>{
+     const id=String(b.id||b.bookingId||b.bookingNumber||i);
+     const service=String(b.serviceName||b.service||b.itemName||b.name||'خدمة');
+     rowsMap.set(id,{...b,id,service});
+   });
+   const rows=[...rowsMap.values()];
+
+   // الحجز اختياري: نعرض الحجوزات السابقة إن وجدت، ونضيف دائمًا خيار "بدون حجز".
+   bs.innerHTML='<option value="">بدون حجز — تقييم عام للخدمة</option>'+
+     rows.map(b=>`<option value="${b.id.replace(/"/g,'&quot;')}">${b.id} — ${b.service}</option>`).join('');
+
+   // قائمة الخدمات تأتي من كتالوج الصالون، وليس من الحجوزات فقط.
+   const catalog=Array.isArray(appData?.services)?appData.services:[];
+   const serviceMap=new Map();
+   catalog.forEach(x=>{
+     const name=String(x.name||x.serviceName||x.service||'').trim();
+     if(name) serviceMap.set(String(x.id||name),{id:String(x.id||name),name});
+   });
+   // نضيف أي خدمة ظهرت في الحجوزات حتى لو لم تعد موجودة في الكتالوج المحلي.
+   rows.forEach(b=>{
+     const id=String(b.serviceId||b.service||b.serviceName||b.service);
+     const name=String(b.service||b.serviceName||'خدمة');
+     if(name&&!serviceMap.has(id)) serviceMap.set(id,{id,name});
+   });
+   const services=[...serviceMap.values()];
+   ss.innerHTML=services.length?
+     '<option value="">اختر الخدمة</option>'+services.map(x=>`<option value="${x.id.replace(/"/g,'&quot;')}">${x.name}</option>`).join(''):
+     '<option value="">لا توجد خدمات متاحة حاليًا</option>';
+   bs.onchange=()=>{
+     const b=rows.find(x=>x.id===bs.value);
+     if(b) {
+       const sid=String(b.serviceId||b.service||b.serviceName||b.service||'');
+       const opt=[...ss.options].find(o=>o.value===sid || o.textContent===String(b.service));
+       if(opt) ss.value=opt.value;
+     }
+   };
+ },
+ async alreadyRated(service,bookingId){
+   const key=this.accountKey(), r=this.ref();
+   const check=arr=>arr.some(x=>x.accountKey===key && (bookingId ? String(x.bookingId||'')===String(bookingId) : (!x.bookingId && String(x.serviceId||x.serviceName||'')===String(service))));
+   try{
+     const local=JSON.parse(localStorage.getItem('nosa_feedback')||'[]');
+     if(check(local)) return true;
+   }catch(_){ }
+   if(!r)return false;
+   try{const snap=await r.orderByChild('accountKey').equalTo(key).once('value');let yes=false;snap.forEach(c=>{if(check([c.val()]))yes=true});return yes}catch(_){return false}
+ },
+ async submit(){
+   const service=document.getElementById('feedback-service')?.value||'';
+   const serviceText=document.getElementById('feedback-service')?.selectedOptions?.[0]?.textContent||service;
+   const bookingId=document.getElementById('feedback-booking')?.value||'';
+   const rating=Number(document.getElementById('feedback-rating')?.value||0);
+   const message=document.getElementById('feedback-message')?.value?.trim()||'';
+   if(!service||!rating||!message) throw new Error('اختر الخدمة والتقييم واكتب رأيك. الحجز اختياري.');
+   if(await this.alreadyRated(service,bookingId)) throw new Error(bookingId?'تم تقييم هذا الحجز من قبل.':'تم تسجيل تقييمك لهذه الخدمة من قبل.');
+   const a=NOSA_PRO_COMM.saveAccount();
+   if(!a.name || a.name==='عميل') throw new Error('اكتب اسم العميل واحفظ الحساب أولاً لإرسال التقييم باسمك.');
+   const item={id:'FB-'+Date.now(),kind:'feedback',accountKey:a.accountKey,uid:a.uid||'',name:a.name||'عميل',branch:a.branch||'',serviceId:service,serviceName:serviceText,bookingId:bookingId||'',rating,message,status:'تم الاستلام',createdAt:Date.now(),source:'client',evaluationType:bookingId?'مرتبط بحجز':'تقييم عام'};
+   try{const old=JSON.parse(localStorage.getItem('nosa_feedback')||'[]');localStorage.setItem('nosa_feedback',JSON.stringify([item,...old].slice(0,100)))}catch(_){ }
+   const r=this.ref(); if(r) await r.child(item.id).set(item);
+   return item;
+ },
+ loadMine(){
+   const target=document.getElementById('client-feedback-list'),r=this.ref(),a=this.accountKey();if(!target)return;
+   const local=(()=>{try{return JSON.parse(localStorage.getItem('nosa_feedback')||'[]').filter(x=>x.accountKey===a)}catch(_){return[]}})();
+   if(!r){target.innerHTML=local.length?local.map(this.row.bind(this)).join(''):'<p class="text-muted">لم ترسل أي تقييمات بعد.</p>';return}
+   r.orderByChild('accountKey').equalTo(a).on('value',s=>{const arr=[];s.forEach(c=>arr.push(c.val()));arr.sort((x,y)=>(y.createdAt||0)-(x.createdAt||0));target.innerHTML=arr.length?arr.map(this.row.bind(this)).join(''):'<p class="text-muted">لم ترسل أي تقييمات بعد.</p>'})
+ },
+ row(x){return `<div class="comm-item"><div><b>${String(x.serviceName||'خدمة')}</b><span>${'★'.repeat(Number(x.rating)||0)}${'☆'.repeat(5-(Number(x.rating)||0))}</span></div><p>${String(x.message||'').replace(/</g,'&lt;')}</p><small>${x.bookingId?'مرتبط بالحجز: '+x.bookingId:'تقييم عام بدون حجز'} — ${new Date(x.createdAt||Date.now()).toLocaleString('ar-EG')} — ${x.status||''}</small></div>`}
+};
+function nosaInitServiceFeedback(){
+ const form=document.getElementById('client-feedback-form');if(!form||form.dataset.ready)return;form.dataset.ready='1';
+ document.querySelectorAll('#feedback-stars button').forEach(btn=>btn.addEventListener('click',()=>{const n=Number(btn.dataset.rating);document.getElementById('feedback-rating').value=n;document.querySelectorAll('#feedback-stars button').forEach(b=>b.classList.toggle('selected',Number(b.dataset.rating)<=n))}));
+ form.addEventListener('submit',async e=>{e.preventDefault();const status=document.getElementById('feedback-status');try{const x=await NOSA_SERVICE_FEEDBACK.submit();status.innerHTML=`<div class="wallet-box">شكرًا ❤️ تم تسجيل تقييمك باسم <b>${NOSA_PRO_COMM.esc(x.name)}</b> للخدمة <b>${x.serviceName}</b> ${x.bookingId?'المرتبط بالحجز '+x.bookingId:'كتقييم عام بدون حجز'} — رقم الهاتف لا يظهر مع التقييم.</div>`;form.reset();document.getElementById('feedback-booking').value='';document.querySelectorAll('#feedback-stars button').forEach(b=>b.classList.remove('selected'));NOSA_SERVICE_FEEDBACK.loadMine()}catch(err){status.innerHTML=`<div class="comm-error">${String(err.message||err)}</div>`}});
+ NOSA_SERVICE_FEEDBACK.loadBookings();NOSA_SERVICE_FEEDBACK.loadMine();
+}
+window.nosaInitServiceFeedback=nosaInitServiceFeedback;
+
+function loadNosaAccountSecurity(){
+    if(userRole!=='nosa'){
+        alert('إدارة كلمات مرور الحسابات متاحة لنوسا Master Admin فقط.');
+        return;
+    }
+    const area=document.getElementById('dynamic-content-area');
+    if(!area) return;
+    const accounts=Object.keys(validAccounts);
+    area.innerHTML=`<h2><i class="fa-solid fa-key"></i> إدارة كلمات مرور الحسابات</h2>
+      <p class="text-muted">يمكن لنوسا Master Admin تغيير كلمة مرور أي حساب إداري. التغيير يُحفظ في بيانات النظام ويُستخدم عند تسجيل الدخول التالي.</p>
+      <div class="card security-card">
+        <div class="security-warning"><i class="fa-solid fa-shield-halved"></i> ملاحظة: هذه المنظومة الحالية تستخدم نظام دخول داخلي داخل المشروع. لتأمين حقيقي بمستوى Firebase Authentication نحتاج نقل الحسابات إلى Firebase Auth/Backend وعدم تخزين كلمات المرور في واجهة المتصفح.</div>
+        <div class="account-password-grid">
+          ${accounts.map(email=>{
+            const a=validAccounts[email];
+            const pass=(appData.accountPasswords&&appData.accountPasswords[email])||a.pass||'';
+            return `<div class="account-password-row" data-email="${NOSA_PRO_COMM.esc(email)}">
+              <div class="account-password-info"><b>${NOSA_PRO_COMM.esc(a.name)}</b><span>${NOSA_PRO_COMM.esc(email)}</span></div>
+              <div class="account-password-controls"><input type="password" class="account-new-password" value="${NOSA_PRO_COMM.esc(pass)}" minlength="6" placeholder="كلمة مرور جديدة"><button class="btn btn-primary btn-sm save-account-password"><i class="fa-solid fa-floppy-disk"></i> حفظ</button></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    area.querySelectorAll('.save-account-password').forEach(btn=>btn.onclick=()=>{
+        const row=btn.closest('.account-password-row');
+        const email=row.dataset.email;
+        const input=row.querySelector('.account-new-password');
+        const newPass=input.value.trim();
+        if(newPass.length<6){alert('كلمة المرور يجب أن تكون 6 أحرف/أرقام على الأقل.');return;}
+        appData.accountPasswords=appData.accountPasswords||{};
+        appData.accountPasswords[email]=newPass;
+        saveData();
+        // تأكيد مزامنة كلمة المرور فورًا؛ لا ننتظر أي تحديث واجهة آخر.
+        if (firebaseDataRef && firebaseReady && !firebaseApplyingRemote) {
+            firebaseApplyingRemote = true;
+            firebaseDataRef.update({ accountPasswords: cloneData(appData.accountPasswords) })
+              .then(()=>{
+                  firebaseLastSyncedData = firebaseLastSyncedData || {};
+                  firebaseLastSyncedData.accountPasswords = cloneData(appData.accountPasswords);
+                  firebaseDirtyKeys.delete('accountPasswords');
+              })
+              .catch(err=>console.error('Password sync error:', err))
+              .finally(()=>{ firebaseApplyingRemote = false; });
+        }
+        alert(`تم تغيير كلمة مرور الحساب ${email} بنجاح. الباسورد القديم لم يعد صالحًا، والباسورد الجديد أصبح هو المعتمد.`);
+    });
+}
+
+function loadNosaCommunicationsCenter(){
+    if(userRole!=='nosa' && userRole!=='admin'){
+        alert('هذا القسم متاح للإدارة ونوسا ماستر فقط.');
+        return;
+    }
+    const area=document.getElementById('dynamic-content-area'); if(!area)return;
+    area.innerHTML=`<h2><i class="fas fa-headset"></i> مركز شكاوى العملاء والاستفسارات والآراء</h2>
+      <p class="text-muted">هذا القسم خاص بالإدارة ونوسا ماستر فقط، ولا يظهر لمديري الفروع.</p>
+      <div class="card">
+        <div class="comm-admin-head"><div><h3>طلبات العملاء</h3></div>
+        <div class="comm-filters"><select id="comm-admin-type"><option value="all">الكل</option><option value="complaints">الشكاوى</option><option value="inquiries">الاستفسارات</option><option value="feedback">الآراء والتقييم</option></select>
+        <select id="comm-admin-status"><option value="all">كل الحالات</option><option>جديد</option><option>قيد المتابعة</option><option>تم الرد</option><option>مغلق</option></select></div></div>
+        <div id="admin-communications-list"><p class="text-muted">جاري التحميل...</p></div>
+      </div>`;
+    const load=async()=>{
+      const ref=window.firebase&&firebase.database?firebase.database().ref('client_communications'):null;
+      if(!ref)return;
+      const all=[];
+      for(const kind of ['complaints','inquiries','feedback']){
+        const snap=await ref.child(kind).limitToLast(300).once('value');
+        snap.forEach(c=>all.push({...c.val(),kind}));
+      }
+      all.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      const render=()=>{
+        const type=document.getElementById('comm-admin-type')?.value||'all', status=document.getElementById('comm-admin-status')?.value||'all';
+        const rows=all.filter(x=>(type==='all'||x.kind===type)&&(status==='all'||x.status===status));
+        const el=document.getElementById('admin-communications-list'); if(!el)return;
+        if(!rows.length){el.innerHTML='<p class="text-muted">لا توجد طلبات مطابقة.</p>';return}
+        el.innerHTML=rows.map(x=>`<div class="admin-comm-row" data-id="${x.id}" data-kind="${x.kind}">
+          <div class="admin-comm-meta"><b>${x.kind==='complaints'?'شكوى':x.kind==='inquiries'?'استفسار':'رأي وتقييم'}</b><span class="comm-status">${x.status||'جديد'}</span></div>
+          <div class="admin-comm-client"><strong>${NOSA_PRO_COMM.esc(x.name||'عميل')}</strong>${x.kind!=='feedback'&&x.phone?`<span>${NOSA_PRO_COMM.esc(x.phone)}</span>`:''}<span>${NOSA_PRO_COMM.esc(x.branch||'')}</span>${x.rating?`<span>${'★'.repeat(Number(x.rating))}${'☆'.repeat(5-Number(x.rating))}</span>`:''}</div>
+          <div class="admin-comm-message"><b>${NOSA_PRO_COMM.esc(x.subject||x.type||x.serviceName||'')}</b><p>${NOSA_PRO_COMM.esc(x.message||'')}</p></div>
+          <div class="admin-comm-actions"><select class="comm-status-select">${['جديد','قيد المتابعة','تم الرد','مغلق'].map(s=>`<option ${x.status===s?'selected':''}>${s}</option>`).join('')}</select>
+          <input class="comm-reply-input" placeholder="اكتب الرد..." value="${NOSA_PRO_COMM.esc(x.reply||'')}"><button class="btn btn-primary btn-sm comm-save-btn">حفظ والرد</button>${userRole==='nosa'?'<button class="btn btn-danger btn-sm comm-delete-btn"><i class="fa-solid fa-trash"></i> حذف</button>':''}</div>
+        </div>`).join('');
+        el.querySelectorAll('.comm-save-btn').forEach(btn=>btn.onclick=async()=>{
+          const row=btn.closest('.admin-comm-row'), kind=row.dataset.kind,id=row.dataset.id;
+          const status=row.querySelector('.comm-status-select').value, reply=row.querySelector('.comm-reply-input').value.trim();
+          await ref.child(kind).child(id).update({status,reply,updatedAt:Date.now(),updatedBy:userRole});
+          const ix=all.findIndex(x=>x.id===id&&x.kind===kind); if(ix>=0){all[ix].status=status;all[ix].reply=reply}
+          render();
+        });
+        el.querySelectorAll('.comm-delete-btn').forEach(btn=>btn.onclick=async()=>{
+          if(userRole!=='nosa'){alert('الحذف متاح لنوسا Master Admin فقط.');return;}
+          const row=btn.closest('.admin-comm-row'), kind=row.dataset.kind,id=row.dataset.id;
+          const label=kind==='complaints'?'الشكوى':kind==='inquiries'?'الاستفسار':'التقييم';
+          if(!confirm(`هل تريد حذف ${label} نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+          await ref.child(kind).child(id).remove();
+          try {
+            const localKey = kind==='feedback' ? 'nosa_feedback' : ('nosa_'+kind);
+            const cached = JSON.parse(localStorage.getItem(localKey)||'[]').filter(x=>x.id!==id);
+            localStorage.setItem(localKey, JSON.stringify(cached));
+          } catch(_) {}
+          const ix=all.findIndex(x=>x.id===id&&x.kind===kind); if(ix>=0) all.splice(ix,1);
+          window.dispatchEvent(new CustomEvent('nosa:communication-deleted',{detail:{kind,id}}));
+          render();
+        });
+      };
+      document.getElementById('comm-admin-type').onchange=render;
+      document.getElementById('comm-admin-status').onchange=render;
+      render();
+    };
+    load();
+};
+
+/* ================= NOSA V9 — CLIENT DASHBOARD NAVIGATION ================= */
+function nosaOpenClientTab(targetId){
+  document.querySelectorAll('.client-tab-content').forEach(c=>c.classList.remove('active'));
+  const target=document.getElementById(targetId);
+  if(target) target.classList.add('active');
+  document.querySelectorAll('.client-side-link').forEach(b=>b.classList.toggle('active',b.dataset.openTab===targetId));
+  document.querySelectorAll('.client-quick-card').forEach(b=>b.classList.toggle('active',b.dataset.openTab===targetId));
+  const main=document.querySelector('.client-dashboard-main'); if(main) main.scrollTo({top:0,behavior:'smooth'});
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-open-tab]');if(!b)return;e.preventDefault();nosaOpenClientTab(b.dataset.openTab);});
+function nosaSyncClientAccountFromBookingForm(){
+ const name=document.getElementById('client-account-name'),phone=document.getElementById('client-account-phone'),branch=document.getElementById('cs-branch');
+ const csn=document.getElementById('cs-name'),csp=document.getElementById('cs-phone');
+ const n=document.getElementById('client-account-name'), p=document.getElementById('client-account-phone');
+ if(n&&csn&&csn.value&&!n.value)n.value=csn.value;
+ if(p&&csp&&csp.value&&!p.value)p.value=csp.value;
+ if(branch&&branch.value)localStorage.setItem('nosa_client_branch',branch.value);
+ if((csn&&csn.value)||(csp&&csp.value)) NOSA_PRO_COMM.saveAccount();
+}
+['cs-name','cs-phone'].forEach(id=>document.getElementById(id)?.addEventListener('input',nosaSyncClientAccountFromBookingForm));
+
+function nosaUpdateHomeSummary(){
+  const name=(localStorage.getItem('nosa_client_name')||'عميل نوسا').trim();
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v};
+  set('sidebar-client-name',name||'عميل نوسا');set('client-home-account-name',name||'عميل نوسا');
+  const get=k=>{try{return JSON.parse(localStorage.getItem(k)||'[]').length}catch(_){return 0}};
+  set('home-bookings-count',get('nosa_bookings'));set('home-orders-count',get('nosa_orders'));set('home-complaints-count',get('nosa_complaints'));set('home-inquiries-count',get('nosa_inquiries'));set('home-feedback-count',get('nosa_feedback'));
+}
+
+
+/* Keep the client inquiry panel fresh whenever the customer opens it. */
+(function(){
+  const oldSwitch = window.switchClientTab;
+  if(typeof oldSwitch === 'function'){
+    window.switchClientTab = function(tab){
+      const result = oldSwitch.apply(this, arguments);
+      setTimeout(()=>window.NOSA_CLIENT_REALTIME?.refresh?.(), 0);
+      return result;
+    };
+  }
+})();
