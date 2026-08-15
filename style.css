@@ -521,3 +521,28 @@ table th {
         max-width: 100%;
     }
 }
+
+/* NOSA V12 — old design + current client data/features */
+.client-account-strip{display:flex;justify-content:space-between;align-items:center;gap:14px;background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:12px 15px;margin:14px 0;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.client-account-fields{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-account-fields input{min-width:180px;padding:9px 11px;border:1px solid #ddd;border-radius:7px}
+.client-tab-content{display:none}.client-tab-content.active{display:block}
+.comm-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.comm-item{background:#fff;border:1px solid #eee;border-radius:10px;padding:12px;margin:8px 0}.comm-item>div{display:flex;justify-content:space-between;gap:10px}.comm-item span{font-size:.8rem;color:var(--primary-dark)}.comm-reply{margin-top:10px;padding:9px;border-radius:8px;background:#f8f4f7}.comm-error{padding:10px;background:#fff0f0;color:#a33;border-radius:8px}
+#feedback-stars{display:flex;gap:7px;margin:8px 0}#feedback-stars button{border:0;background:transparent;font-size:28px;cursor:pointer;color:#bbb}#feedback-stars button.selected{color:#d86a91}
+@media(max-width:900px){.client-container{width:100%;max-width:100%;padding:10px}.client-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.client-tabs .tab-btn{width:100%;white-space:normal}.form-row{grid-template-columns:1fr!important}.comm-grid{grid-template-columns:1fr}.client-account-strip{flex-direction:column;align-items:stretch}.client-account-fields{width:100%}.client-account-fields input{flex:1;min-width:0;width:100%}}
+@media(max-width:520px){.client-header{flex-direction:column;gap:10px;align-items:stretch}.client-tabs{grid-template-columns:1fr}.client-account-fields{flex-direction:column}.client-account-fields input,.client-account-fields button{width:100%}.card{padding:14px}}
+
+#feedback-privacy-note{font-size:.9rem;line-height:1.6}
+/* NOSA V16 - Master Admin account security + communication delete */
+.security-card{margin-top:16px}
+.security-warning{padding:12px 14px;border-radius:12px;background:#fff8e8;border:1px solid #f0d58b;color:#765b18;margin-bottom:16px;line-height:1.8}
+.account-password-grid{display:grid;gap:12px}
+.account-password-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;border:1px solid #eadfe3;border-radius:14px;background:#fff}
+.account-password-info{display:flex;flex-direction:column;gap:5px;min-width:220px}.account-password-info span{color:#888;font-size:.9rem;direction:ltr;text-align:right}
+.account-password-controls{display:flex;gap:8px;align-items:center;flex:1;justify-content:flex-end}.account-new-password{max-width:300px;padding:10px 12px;border:1px solid #ddd;border-radius:9px}
+.btn-danger{background:#c0395f!important;color:#fff!important;border:none!important}.btn-danger:hover{filter:brightness(.95)}
+@media(max-width:700px){.account-password-row{flex-direction:column;align-items:stretch}.account-password-controls{justify-content:stretch}.account-new-password{max-width:none;flex:1}}
+
+/* V19: keep realtime booking/order tables inside the one-screen client layout */
+.client-view, #client-view { max-width:100%; overflow-x:hidden; }
+#client-view table { width:100%; max-width:100%; table-layout:fixed; }
+#client-view td, #client-view th { overflow:hidden; text-overflow:ellipsis; }
