@@ -95,18 +95,51 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
-    background: linear-gradient(135deg, #2c3e50, #4ca1af);
+    min-height: 100vh;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    background: #2d2421 url("salon-owner.jpeg") center center / cover no-repeat;
+}
+
+.auth-container::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(28,20,18,.62), rgba(28,20,18,.28));
+    z-index: 0;
 }
 
 .auth-card {
-    background: #fff;
-    padding: 40px;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    position: relative;
+    z-index: 1;
+    background: rgba(255,255,255,.96);
+    padding: 30px 36px 34px;
+    border-radius: 20px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.35);
     width: 100%;
     max-width: 400px;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,.7);
 }
+
+.auth-logo-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: -4px auto 14px;
+}
+
+.auth-logo {
+    width: 118px;
+    height: 118px;
+    object-fit: contain;
+    border-radius: 22px;
+    background: #fff;
+    border: 4px solid #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,.20);
+}
+
 
 .form-group {
     margin-bottom: 15px;
@@ -546,3 +579,119 @@ table th {
 .client-view, #client-view { max-width:100%; overflow-x:hidden; }
 #client-view table { width:100%; max-width:100%; table-layout:fixed; }
 #client-view td, #client-view th { overflow:hidden; text-overflow:ellipsis; }
+
+/* NOSA - إدارة الخدمات والمنتجات: أدوات التعديل بدون حذف */
+.admin-edit-note{background:#eef7ff;border:1px solid #cfe6ff;border-radius:10px;padding:12px 14px;margin-bottom:16px;line-height:1.8;color:#234}
+.admin-item-actions{white-space:nowrap}
+.admin-item-actions .btn{margin:2px}
+
+
+/* ==========================================
+   استجابة كاملة لشاشة تسجيل الدخول
+   موبايل / تابلت / لابتوب / كمبيوتر
+   ========================================== */
+@media (max-width: 768px) {
+    .auth-container {
+        min-height: 100svh;
+        min-height: 100dvh;
+        padding: 16px;
+        background-position: center center;
+    }
+
+    .auth-card {
+        width: min(100%, 430px);
+        max-width: 430px;
+        padding: 24px 22px 26px;
+        border-radius: 18px;
+    }
+
+    .auth-logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 18px;
+    }
+
+    .auth-card h2 {
+        font-size: 1.45rem;
+    }
+
+    .auth-card .btn {
+        min-height: 46px;
+    }
+}
+
+@media (max-width: 480px) {
+    .auth-container {
+        padding: 10px;
+        align-items: center;
+    }
+
+    .auth-card {
+        padding: 20px 16px 22px;
+        width: 100%;
+        border-radius: 16px;
+    }
+
+    .auth-logo {
+        width: 82px;
+        height: 82px;
+        border-radius: 16px;
+        border-width: 3px;
+    }
+
+    .auth-card h2 {
+        font-size: 1.3rem;
+        margin-bottom: 6px;
+    }
+
+    .auth-card .text-muted {
+        font-size: .82rem;
+    }
+
+    .form-group input,
+    .form-group select {
+        min-height: 44px;
+        font-size: 16px;
+    }
+}
+
+/* منع تمدد العناصر خارج الشاشة على جميع الأجهزة */
+img, video, canvas, svg {
+    max-width: 100%;
+}
+
+input, select, textarea, button {
+    max-width: 100%;
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+    .main-content {
+        min-width: 0;
+        overflow-x: auto;
+    }
+
+    .dashboard-layout {
+        min-width: 0;
+    }
+}
+
+/* NOSA V17 — تنظيم مركز شكاوى العملاء والاستفسارات والآراء */
+.comm-center-page{width:100%}
+.comm-center-title{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
+.comm-center-title h2{margin-bottom:6px}
+.comm-center-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px}
+.comm-center-stat{min-width:130px;padding:10px 14px;border:1px solid #e8e8e8;border-radius:10px;background:#fafafa;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.comm-center-stat span{font-weight:600;color:#555}.comm-center-stat b{font-size:1.15rem;color:var(--primary-dark)}
+.comm-filters{margin-right:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.comm-filters label{font-weight:700}.comm-filters select{padding:9px 11px;border:1px solid #ddd;border-radius:7px;background:#fff;min-width:130px}
+.comm-center-sections{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.comm-section{background:#f7f8fa;border:1px solid #e3e6ea;border-radius:14px;overflow:hidden;min-width:0}
+.comm-section-head{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;background:#fff;border-bottom:1px solid #e5e7eb}.comm-section-head h3{display:flex;align-items:center;gap:8px;font-size:1.05rem}.comm-section-head>span{font-size:.82rem;color:#777;background:#f0f2f4;padding:5px 9px;border-radius:20px}
+.comm-section-list{padding:10px;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 300px);overflow:auto}
+.admin-comm-card{background:#fff;border:1px solid #e1e4e8;border-radius:12px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.admin-comm-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.admin-comm-card-top>div{display:flex;flex-direction:column;gap:3px;min-width:0}.admin-comm-card-top strong{font-size:.98rem}.admin-comm-card-top span:not(.comm-status-pill){font-size:.82rem;color:#777;direction:ltr;text-align:right}
+.comm-status-pill{white-space:nowrap;font-size:.76rem;padding:4px 8px;border-radius:20px;background:#eef2f5;color:#2c3e50}
+.admin-comm-card-info{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0;color:#777;font-size:.78rem}.admin-comm-card-info span{background:#f7f7f7;border-radius:6px;padding:4px 7px}.comm-stars{color:#d86a91!important;font-size:.9rem!important}
+.admin-comm-message{padding:9px 10px;background:#fafafa;border-radius:9px;margin-bottom:9px}.admin-comm-message h4{font-size:.9rem;margin-bottom:5px;color:#333}.admin-comm-message p{font-size:.88rem;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.admin-comm-message small{display:block;color:#888;margin-top:4px}
+.admin-comm-reply-area{display:flex;flex-direction:column;gap:7px}.comm-status-select,.comm-reply-input{width:100%;padding:9px 10px;border:1px solid #dfe2e5;border-radius:8px;background:#fff;font-size:.9rem}.comm-reply-input{resize:vertical;min-height:48px;line-height:1.6}.admin-comm-actions{display:flex;gap:7px;flex-wrap:wrap}.admin-comm-actions .btn{flex:1;min-width:120px}.comm-existing-reply{display:flex;flex-direction:column;gap:4px;padding:8px 9px;border-radius:8px;background:#f4f8f5;color:#42634d;font-size:.8rem;line-height:1.6}.comm-empty{text-align:center;color:#888;padding:28px 10px;background:#fff;border-radius:9px;font-size:.85rem}
+@media(max-width:1100px){.comm-center-sections{grid-template-columns:1fr}.comm-section-list{max-height:none}.comm-center-toolbar{align-items:stretch}.comm-filters{margin-right:0;width:100%}}
+@media(max-width:650px){.comm-center-title{flex-direction:column}.comm-center-toolbar{padding:12px}.comm-center-stat{flex:1;min-width:0}.comm-filters select{flex:1;min-width:0}.admin-comm-actions .btn{width:100%;flex:auto}.comm-section-list{padding:8px}}
