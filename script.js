@@ -159,6 +159,13 @@ function normalizeAppData(data) {
     const d = (data && typeof data === 'object') ? data : {};
     d.services = asArray(d.services);
     d.products = asArray(d.products);
+    [...d.services, ...d.products].forEach(item => {
+        const basePrice = Number(item.price || 0);
+        if (!Number.isFinite(Number(item.priceMin))) item.priceMin = basePrice;
+        if (!Number.isFinite(Number(item.priceMax))) item.priceMax = basePrice;
+        if (item.priceMode !== 'range') item.priceMode = 'single';
+        if (item.priceMode === 'single') { item.priceMin = basePrice; item.priceMax = basePrice; }
+    });
     d.wallets = asArray(d.wallets);
     d.bookings = asArray(d.bookings);
     d.invoices = asArray(d.invoices);
@@ -518,8 +525,12 @@ function initEventListeners() {
                 itemId: serviceObj.id,
                 itemName: `${serviceObj.name}`,
                 price: serviceObj.price,
+                priceMode: getItemPriceMode(serviceObj),
+                priceMin: getItemPriceMin(serviceObj),
+                priceMax: getItemPriceMax(serviceObj),
+                selectedPrice: getItemPriceMode(serviceObj) === 'range' ? null : Number(serviceObj.price),
                 shippingCost: 0,
-                totalAmount: serviceObj.price,
+                totalAmount: getItemPriceMode(serviceObj) === 'range' ? null : Number(serviceObj.price),
                 paymentMethod: payMethod,
                 paymentStatus: 'جاري المراجعة',
                 orderStatus: 'قيد المراجعة',
@@ -758,7 +769,7 @@ function updateClientProductTotalCalculation() {
         return;
     }
 
-    const subtotal = productObj.price * qty;
+    const subtotal = getItemCalculationPrice(productObj) * qty;
 
     if (!appData.shippingRates) appData.shippingRates = { dokki: { pickup: 0, local: 30, regional: 60 }, haddayek: { pickup: 0, local: 30, regional: 60 } };
     if (!appData.shippingRates[branchId]) appData.shippingRates[branchId] = { pickup: 0, local: 30, regional: 60 };
@@ -797,7 +808,7 @@ function loadClientServices(branchId) {
             let generatedCode = `${prefixCode}-${currentSeqNum}`;
 
             select.innerHTML += `<option value="${s.id}">
-                ${s.name} - السعر: ${s.price} ج - الكود المتاح: (${generatedCode}) - المتبقي: ${s.max}
+                ${s.name} - السعر: ${getItemPriceLabel(s)} - الكود المتاح: (${generatedCode}) - المتبقي: ${s.max}
             </option>`;
         }
     });
@@ -815,7 +826,7 @@ function loadClientProducts(branchId) {
             let generatedCode = `${prefixCode}-${currentSeqNum}`;
 
             select.innerHTML += `<option value="${p.id}">
-                ${p.name} - السعر: ${p.price} ج - الكود المتاح: (${generatedCode}) - المتبقي بالمخزن: ${p.qty}
+                ${p.name} - السعر: ${getItemPriceLabel(p)} - الكود المتاح: (${generatedCode}) - المتبقي بالمخزن: ${p.qty}
             </option>`;
         }
     });
@@ -838,7 +849,11 @@ function loadClientWallets(branchId, prefix) {
 function showTicketModal(bData) {
     const content = document.getElementById('ticket-details-content');
     if(!content) return;
-    let finalDisplayTotal = bData.totalAmount || (bData.price + (bData.shippingCost || 0));
+    const isRangeBooking = bData.type === 'حجز خدمة' && bData.priceMode === 'range';
+    const hasValidSelectedPrice = isRangeBooking && Number.isFinite(Number(bData.selectedPrice)) && Number(bData.selectedPrice) >= Number(bData.priceMin) && Number(bData.selectedPrice) <= Number(bData.priceMax);
+    let finalDisplayTotal = isRangeBooking
+        ? (hasValidSelectedPrice ? `${Number(bData.selectedPrice)} جنيه` : `${Number(bData.priceMin)} - ${Number(bData.priceMax)} جنيه`)
+        : `${Number(bData.totalAmount ?? bData.price ?? 0) + Number(bData.shippingCost || 0)} جنيه`;
     content.innerHTML = `
         <h1 class="text-center" style="font-size: 2.2rem; color: var(--primary-dark); text-align:center;">${bData.bookingNumber}</h1>
         <p><strong>اسم العميل:</strong> ${bData.customerName}</p>
@@ -852,7 +867,8 @@ function showTicketModal(bData) {
             <p><strong>سعر المنتجات:</strong> ${bData.price} جنيه</p>
             <p><strong>تكلفة الشحن:</strong> ${bData.shippingCost || 0} جنيه</p>
         ` : ''}
-        <p><strong>الإجمالي الكلي:</strong> <span style="color:#c0392b; font-weight:bold; font-size:1.1rem;">${finalDisplayTotal} جنيه</span></p>
+        <p><strong>${isRangeBooking && !hasValidSelectedPrice ? 'نطاق السعر:' : 'الإجمالي الكلي:'}</strong> <span style="color:#c0392b; font-weight:bold; font-size:1.1rem;">${finalDisplayTotal}</span></p>
+        ${isRangeBooking && !hasValidSelectedPrice ? `<p class="text-muted">السعر النهائي يحدده مسؤول الفرع/نوسا بين ${bData.priceMin} و ${bData.priceMax} جنيه قبل إصدار الفاتورة.</p>` : ''}
         <p><strong>طريقة الدفع:</strong> ${bData.paymentMethod === 'cash' ? 'نقدي (كاش)' : 'فودافون كاش'}</p>
         <p><strong>الحالة:</strong> ${bData.paymentStatus}</p>
     `;
@@ -860,8 +876,8 @@ function showTicketModal(bData) {
 }
 
 function canViewPrices() {
-    // الأسعار المالية التفصيلية متاحة لنوسا Master Admin فقط.
-    return userRole === 'nosa';
+    // الأسعار المالية التفصيلية متاحة لـ Master Admin (نوسا) ومسؤول العروض والمنتجات.
+    return userRole === 'nosa' || userRole === 'admin';
 }
 
 function renderDashboard() {
@@ -876,6 +892,7 @@ function renderDashboard() {
         menu.innerHTML = `
             <li><a href="javascript:void(0);" onclick="loadNosaOverview()"><i class="fa-solid fa-chart-pie"></i> اللوحة المالية والفواتير والأرشيف</a></li>
             <li><a href="javascript:void(0);" onclick="loadAdminOffersSection()"><i class="fa-solid fa-tags"></i> إدارة الخدمات والمنتجات والأسعار</a></li>
+            <li><a href="javascript:void(0);" onclick="loadAdminPaymentsSection()"><i class="fa-solid fa-check-circle"></i> مراجعة فودافون كاش</a></li>
             <li><a href="javascript:void(0);" onclick="loadAdminShippingSection()"><i class="fa-solid fa-truck"></i> إدارة أسعار الشحن والتوصيل</a></li>
             <li><a href="javascript:void(0);" onclick="loadNosaCommunicationsCenter()"><i class="fa-solid fa-headset"></i> شكاوى العملاء والاستفسارات والآراء</a></li>
             <li><a href="javascript:void(0);" onclick="loadNosaAccountSecurity()"><i class="fa-solid fa-key"></i> إدارة كلمات مرور الحسابات</a></li>
@@ -1038,7 +1055,8 @@ function loadBranchOffersView(branchId) {
 
             if (b.paymentMethod === 'cash') {
                 if (b.paymentStatus === 'جاري المراجعة' && !isAlreadyInvoiced) {
-                    actionBtn = `<div style="display:flex; flex-direction:column; gap:5px;"><button class="btn btn-primary btn-sm" onclick="confirmBranchCashPayment('${b.id}')">تأكيد الكاش وإصدار الفاتورة</button><br>${statusControlHtml}</div>`;
+                    const priceBtn = (b.type === 'حجز خدمة' && b.priceMode === 'range') ? `<button class="btn btn-secondary btn-sm" onclick="setBookingActualPrice('${b.id}', 'branch')">تحديد السعر الفعلي (${getBookingPriceLabel(b)})</button>` : '';
+                    actionBtn = `<div style="display:flex; flex-direction:column; gap:5px;">${priceBtn}<button class="btn btn-primary btn-sm" onclick="confirmBranchCashPayment('${b.id}')">تأكيد الكاش وإصدار الفاتورة</button><br>${statusControlHtml}</div>`;
                 } else {
                     actionBtn = `<div style="display:flex; flex-direction:column; gap:5px;"><button class="btn btn-danger btn-sm" onclick="deleteBranchBooking('${b.id}')">حذف الحجز</button><br>${statusControlHtml}</div>`;
                 }
@@ -1046,7 +1064,7 @@ function loadBranchOffersView(branchId) {
                 actionBtn = `<div style="display:flex; flex-direction:column; gap:5px;"><span class="badge">${b.paymentStatus}</span><br>${statusControlHtml}</div>`;
             }
 
-            let detailsCol = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><span class="badge" style="background:#e67e22; color:#fff;">${b.quantity || 1} قطعة</span>` : ''}`;
+            let detailsCol = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><span class="badge" style="background:#e67e22; color:#fff;">${b.quantity || 1} قطعة</span>` : `<br><strong style="color:#c0392b;">السعر: ${getBookingPriceLabel(b)}</strong>`}`;
             let deliveryCol = b.type === 'حجز منتجات' ? `<strong>${b.deliveryTypeName}</strong><br><small style="color:#666;">العنوان: ${b.address}</small>` : `-`;
 
             html += `<tr>
@@ -1151,6 +1169,10 @@ function nextPrefixQueue(branchId, pCode) {
 function confirmBranchCashPayment(bookingId) {
     const booking = appData.bookings.find(b => b.id === bookingId);
     if (booking) {
+        if (booking.type === 'حجز خدمة' && booking.priceMode === 'range' && !Number.isFinite(Number(booking.selectedPrice))) {
+            setBookingActualPrice(bookingId, 'branch');
+            if (!Number.isFinite(Number(booking.selectedPrice))) return;
+        }
         booking.paymentStatus = 'تم استلام المبلغ';
         if (!appData.invoices) appData.invoices = [];
         
@@ -1192,107 +1214,139 @@ function deleteBranchBooking(bookingId) {
     }
 }
 
+function getItemPriceMode(item) {
+    return item && item.priceMode === 'range' ? 'range' : 'single';
+}
+function getItemPriceMin(item) {
+    const min = Number(item?.priceMin);
+    return Number.isFinite(min) ? min : Number(item?.price || 0);
+}
+function getItemPriceMax(item) {
+    const max = Number(item?.priceMax);
+    return Number.isFinite(max) ? max : Number(item?.price || 0);
+}
+function getItemPriceLabel(item) {
+    if (!item) return '0 جنيه';
+    const min = getItemPriceMin(item), max = getItemPriceMax(item);
+    if (getItemPriceMode(item) === 'range' && max > min) return `${min} - ${max} جنيه`;
+    return `${Number(item.price ?? min)} جنيه`;
+}
+function getItemCalculationPrice(item) {
+    return getItemPriceMode(item) === 'range' ? getItemPriceMin(item) : Number(item?.price || 0);
+}
+
+function getBookingPriceLabel(booking) {
+    if (!booking) return '0 جنيه';
+    if (booking.type === 'حجز خدمة' && booking.priceMode === 'range' && Number(booking.priceMax) > Number(booking.priceMin)) {
+        if (Number.isFinite(Number(booking.selectedPrice)) && Number(booking.selectedPrice) >= Number(booking.priceMin) && Number(booking.selectedPrice) <= Number(booking.priceMax)) {
+            return `${Number(booking.selectedPrice)} جنيه`;
+        }
+        return `${Number(booking.priceMin)} - ${Number(booking.priceMax)} جنيه`;
+    }
+    return `${Number(booking.totalAmount ?? booking.price ?? 0) + Number(booking.shippingCost || 0)} جنيه`;
+}
+
+function setBookingActualPrice(bookingId, returnView) {
+    const booking = appData.bookings.find(b => b.id === bookingId);
+    if (!booking || booking.type !== 'حجز خدمة' || booking.priceMode !== 'range') return false;
+    const min = Number(booking.priceMin), max = Number(booking.priceMax);
+    const current = Number.isFinite(Number(booking.selectedPrice)) ? Number(booking.selectedPrice) : min;
+    const input = prompt(`حدد السعر الفعلي الذي سيدفعه العميل\nالمسموح من ${min} إلى ${max} جنيه:`, String(current));
+    if (input === null) return false;
+    const value = parseFloat(input);
+    if (!Number.isFinite(value) || value < min || value > max) {
+        alert(`السعر يجب أن يكون بين ${min} و ${max} جنيه.`);
+        return false;
+    }
+    booking.selectedPrice = value;
+    booking.price = value;
+    booking.totalAmount = value;
+    saveData();
+
+    // لا ننقل مسؤول العروض والمنتجات إلى صفحة الفروع عند تعديل سعر حجز من مراجعة فودافون كاش.
+    if (returnView === 'payments') {
+        if (typeof renderAdminPaymentsTable === 'function') { try { renderAdminPaymentsTable(); } catch (_) {} }
+    } else if (returnView === 'branch') {
+        if (typeof loadBranchOffersView === 'function' && booking.branchId) {
+            try { loadBranchOffersView(booking.branchId); } catch (_) {}
+        }
+    } else if (userRole === 'admin' && typeof renderAdminPaymentsTable === 'function') {
+        try { renderAdminPaymentsTable(); } catch (_) {}
+    }
+    alert(`تم تحديد سعر الحجز: ${value} جنيه. سيظهر بهذا السعر في الفاتورة وإيرادات نوسا.`);
+    return true;
+}
+
 function loadAdminOffersSection() {
     const area = document.getElementById('dynamic-content-area');
     if (!area) return;
     area.innerHTML = `
         <h2>إدارة عروض الخدمات والمنتجات</h2>
         <div class="card mt-3">
+            <div class="admin-edit-note"><strong>مهم:</strong> أضف كل خدمة أو منتج مرة واحدة فقط. يظهر السعر لمسؤول العروض والمنتجات وMaster Admin، ويمكن تعديل السعر أو مدى السعر أو البادئة أو العدد المتاح من زر <strong>تعديل</strong> بدون حذف العنصر. <strong>اسم الخدمة/المنتج لا يتم تغييره من زر التعديل.</strong></div>
             <form id="admin-add-service-form">
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>الفرع</label>
-                        <select id="adm-branch" required>
-                            <option value="dokki">فرع الدواجن</option>
-                            <option value="haddayek">فرع الحدائق</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>النوع</label>
-                        <select id="adm-type" required>
-                            <option value="service">خدمة</option>
-                            <option value="product">منتج</option>
-                        </select>
-                    </div>
+                    <div class="form-group"><label>الفرع</label><select id="adm-branch" required><option value="dokki">فرع الدواجن</option><option value="haddayek">فرع الحدائق</option></select></div>
+                    <div class="form-group"><label>النوع</label><select id="adm-type" required><option value="service">خدمة</option><option value="product">منتج</option></select></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>الاسم</label>
-                        <input type="text" id="adm-name" required placeholder="اسم الخدمة أو المنتج">
-                    </div>
-                    <div class="form-group">
-                        <label>السعر للقطعة</label>
-                        <input type="number" id="adm-price" required placeholder="السعر">
-                    </div>
+                    <div class="form-group"><label>الاسم</label><input type="text" id="adm-name" required placeholder="اسم الخدمة أو المنتج"></div>
+                    <div class="form-group"><label>نوع السعر</label><select id="adm-price-mode" required><option value="single">سعر ثابت</option><option value="range">مدى سعري (من - إلى)</option></select></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>العدد الإجمالي المتاح / المخزون</label>
-                        <input type="number" id="adm-max" required placeholder="مثال: 15">
-                    </div>
-                    <div class="form-group">
-                        <label>بادئة كود التسلسل (مثال: AMANY, DODO, NOSA)</label>
-                        <input type="text" id="adm-prefix" required placeholder="اسم الكود بالإنجليزية">
-                    </div>
+                    <div class="form-group"><label id="adm-price-label">السعر للقطعة</label><input type="number" id="adm-price" min="0" step="0.01" required placeholder="مثال: 100"></div>
+                    <div class="form-group hidden" id="adm-price-max-group"><label>السعر إلى</label><input type="number" id="adm-price-max" min="0" step="0.01" placeholder="مثال: 500"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>العدد الإجمالي المتاح / المخزون</label><input type="number" id="adm-max" min="0" required placeholder="مثال: 15"></div>
+                    <div class="form-group"><label>بادئة كود التسلسل (مثال: AMANY, DODO, NOSA)</label><input type="text" id="adm-prefix" required placeholder="اسم الكود بالإنجليزية"></div>
                 </div>
                 <button type="submit" class="btn btn-primary">إضافة الخدمة/المنتج</button>
             </form>
         </div>
-        <div class="card mt-4"><div id="admin-services-list"></div></div>
-    `;
-    renderAdminServicesTable();
+        <div class="card mt-4"><div id="admin-services-list"></div></div>`;
 
-    const addServForm = document.getElementById('admin-add-service-form');
-    if(addServForm) {
-        addServForm.onsubmit = function(e) {
-            e.preventDefault();
-            const type = document.getElementById('adm-type').value;
-            const newItem = {
-                id: 'ITM-' + Date.now(),
-                branchId: document.getElementById('adm-branch').value,
-                name: document.getElementById('adm-name').value,
-                price: parseFloat(document.getElementById('adm-price').value),
-                max: parseInt(document.getElementById('adm-max').value),
-                qty: parseInt(document.getElementById('adm-max').value),
-                currentCount: 0,
-                codePrefix: document.getElementById('adm-prefix').value.trim().toUpperCase()
-            };
-            if (type === 'service') {
-                appData.services.push(newItem);
-            } else { 
-                appData.products.push(newItem); 
-            }
-            saveData();
-            e.target.reset();
-            renderAdminServicesTable();
-            alert('تمت الإضافة بنجاح وتفعيل الكود في قائمة إدارة الفرع والاستعلام!');
-        };
-    }
+    const modeEl=document.getElementById('adm-price-mode'), maxGroup=document.getElementById('adm-price-max-group'), maxInput=document.getElementById('adm-price-max'), label=document.getElementById('adm-price-label');
+    const toggle=()=>{const range=modeEl?.value==='range';maxGroup?.classList.toggle('hidden',!range);if(maxInput)maxInput.required=range;if(label)label.textContent=range?'السعر من':'السعر للقطعة';};
+    modeEl?.addEventListener('change',toggle); toggle(); renderAdminServicesTable();
+
+    const form=document.getElementById('admin-add-service-form');
+    if(form) form.onsubmit=function(e){
+        e.preventDefault();
+        const mode=modeEl.value, min=parseFloat(document.getElementById('adm-price').value), max=mode==='range'?parseFloat(maxInput.value):min, available=parseInt(document.getElementById('adm-max').value);
+        if(!Number.isFinite(min)||!Number.isFinite(max)||min<0||max<min){alert('يرجى إدخال سعر صحيح. في المدى السعري يجب أن يكون السعر إلى أكبر من أو يساوي السعر من.');return;}
+        const item={id:'ITM-'+Date.now(),branchId:document.getElementById('adm-branch').value,name:document.getElementById('adm-name').value.trim(),price:min,priceMin:min,priceMax:max,priceMode:mode,max:available,qty:available,currentCount:0,codePrefix:document.getElementById('adm-prefix').value.trim().toUpperCase()};
+        if(document.getElementById('adm-type').value==='service') appData.services.push(item); else appData.products.push(item);
+        saveData();e.target.reset();toggle();renderAdminServicesTable();alert('تمت الإضافة بنجاح. يمكنك الآن تعديل السعر أو الكود أو المخزون من زر تعديل بدون حذف العنصر.');
+    };
 }
 
 function renderAdminServicesTable() {
-    const listDiv = document.getElementById('admin-services-list');
-    if (!listDiv) return;
-    const priceHead = canViewPrices() ? '<th>السعر</th>' : '';
-    let html = `<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th>${priceHead}<th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
-    appData.services.forEach(s => {
-        const priceCell = canViewPrices() ? `<td>${s.price} جنيه</td>` : '';
-        html += `<tr><td>خدمة</td><td>${s.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${s.name}</td>${priceCell}<td>${s.max}</td><td><span class="badge" style="background:#34495e; color:#fff;">${s.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}', 'service')">حذف</button></td></tr>`;
-    });
-    appData.products.forEach(p => {
-        const priceCell = canViewPrices() ? `<td>${p.price} جنيه</td>` : '';
-        html += `<tr><td>منتج</td><td>${p.branchId === 'dokki' ? 'الدواجن' : 'الحدائق'}</td><td>${p.name}</td>${priceCell}<td>${p.qty}</td><td><span class="badge" style="background:#34495e; color:#fff;">${p.codePrefix || 'NOSA'}</span></td><td><button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}', 'product')">حذف</button></td></tr>`;
-    });
-    html += `</tbody></table>`;
-    listDiv.innerHTML = html;
+    const listDiv=document.getElementById('admin-services-list'); if(!listDiv)return;
+    const priceHead=canViewPrices()?'<th>السعر</th>':'';
+    let html=`<table><thead><tr><th>النوع</th><th>الفرع</th><th>الاسم</th>${priceHead}<th>العدد/المتبقي</th><th>البادئة (الكود)</th><th>إجراء</th></tr></thead><tbody>`;
+    appData.services.forEach(s=>{const pc=canViewPrices()?`<td>${getItemPriceLabel(s)}</td>`:'';html+=`<tr><td>خدمة</td><td>${s.branchId==='dokki'?'الدواجن':'الحدائق'}</td><td>${s.name}</td>${pc}<td>${s.max}</td><td><span class="badge" style="background:#34495e;color:#fff;">${s.codePrefix||'NOSA'}</span></td><td class="admin-item-actions"><button class="btn btn-primary btn-sm" onclick="editItem('${s.id}','service')">تعديل</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('${s.id}','service')">حذف</button></td></tr>`;});
+    appData.products.forEach(p=>{const pc=canViewPrices()?`<td>${getItemPriceLabel(p)}</td>`:'';html+=`<tr><td>منتج</td><td>${p.branchId==='dokki'?'الدواجن':'الحدائق'}</td><td>${p.name}</td>${pc}<td>${p.qty}</td><td><span class="badge" style="background:#34495e;color:#fff;">${p.codePrefix||'NOSA'}</span></td><td class="admin-item-actions"><button class="btn btn-primary btn-sm" onclick="editItem('${p.id}','product')">تعديل</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('${p.id}','product')">حذف</button></td></tr>`;});
+    listDiv.innerHTML=html+'</tbody></table>';
 }
 
-function deleteItem(id, type) {
-    if(type === 'service') appData.services = appData.services.filter(s => s.id !== id);
-    else appData.products = appData.products.filter(p => p.id !== id);
-    saveData();
-    renderAdminServicesTable();
+function editItem(id,type){
+    const collection=type==='service'?appData.services:appData.products,item=collection.find(x=>x.id===id);if(!item)return;
+    const mode=getItemPriceMode(item), min=getItemPriceMin(item), max=getItemPriceMax(item), available=type==='service'?Number(item.max||0):Number(item.qty||0);
+    // اسم الخدمة/المنتج ثابت ولا يتم تعديله من هنا. التعديل مخصص للسعر والكود والمخزون فقط.
+    const modeInput=prompt('نوع السعر: اكتب single للسعر الثابت أو range للمدى السعري.',mode);if(modeInput===null)return;
+    const newMode=modeInput.trim().toLowerCase()==='range'?'range':'single';
+    const minInput=prompt(newMode==='range'?'السعر من:':'السعر للقطعة:',String(min));if(minInput===null)return;const newMin=parseFloat(minInput);
+    let newMax=newMin;if(newMode==='range'){const maxInput=prompt('السعر إلى:',String(max));if(maxInput===null)return;newMax=parseFloat(maxInput);}
+    const availInput=prompt('العدد الإجمالي المتاح / المخزون:',String(available));if(availInput===null)return;const newAvailable=parseInt(availInput);
+    const prefix=prompt('بادئة الكود:',item.codePrefix||'NOSA');if(prefix===null)return;
+    if(!Number.isFinite(newMin)||!Number.isFinite(newMax)||newMin<0||newMax<newMin||!Number.isInteger(newAvailable)||newAvailable<0||!prefix.trim()){alert('البيانات المدخلة غير صحيحة. راجع السعر والعدد والبادئة.');return;}
+    item.priceMode=newMode;item.priceMin=newMin;item.priceMax=newMax;item.price=newMin;item.codePrefix=prefix.trim().toUpperCase();
+    if(type==='service') item.max=newAvailable; else {item.qty=newAvailable;item.max=newAvailable;}
+    saveData();renderAdminServicesTable();alert('تم تعديل العنصر بنجاح بدون حذفه أو إنشاء عنصر جديد.');
 }
+
+function deleteItem(id,type){if(type==='service')appData.services=appData.services.filter(s=>s.id!==id);else appData.products=appData.products.filter(p=>p.id!==id);saveData();renderAdminServicesTable();}
 
 function loadAdminShippingSection() {
     const area = document.getElementById('dynamic-content-area');
@@ -1475,11 +1529,12 @@ function renderAdminPaymentsTable() {
         let isAlreadyInvoiced = appData.invoices && appData.invoices.some(inv => inv.bookingNumber === b.bookingNumber);
         let btn = '';
         if (b.paymentStatus === 'جاري المراجعة' && !isAlreadyInvoiced) {
-            btn = `<button class="btn btn-primary btn-sm" onclick="confirmAdminPayment('${b.id}')">تأكيد التحويل</button>`;
+            const priceBtn = (b.type === 'حجز خدمة' && b.priceMode === 'range') ? `<button class="btn btn-secondary btn-sm" onclick="setBookingActualPrice('${b.id}', 'payments')">تحديد السعر: ${getBookingPriceLabel(b)}</button>` : '';
+            btn = `${priceBtn}<button class="btn btn-primary btn-sm" onclick="confirmAdminPayment('${b.id}')">تأكيد التحويل</button>`;
         } else {
             btn = `<button class="btn btn-danger btn-sm" onclick="deleteAdminBooking('${b.id}')">حذف</button>`;
         }
-        let detailsText = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><small>(${b.deliveryTypeName}) - ${b.address}</small>` : ''}`;
+        let detailsText = `${b.itemName} ${b.type === 'حجز منتجات' ? `<br><small>(${b.deliveryTypeName}) - ${b.address}</small>` : `<br><strong style="color:#c0392b;">السعر: ${getBookingPriceLabel(b)}</strong>`}`;
         html += `<tr><td>${b.customerName}</td><td><strong>${b.bookingNumber}</strong></td><td>${b.branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق'}</td><td>${detailsText}</td><td><span class="badge">${b.paymentStatus}</span></td><td>${btn}</td></tr>`;
     });
     html += `</tbody></table>`;
@@ -1489,6 +1544,10 @@ function renderAdminPaymentsTable() {
 function confirmAdminPayment(bookingId) {
     const b = appData.bookings.find(item => item.id === bookingId);
     if (b) {
+        if (b.type === 'حجز خدمة' && b.priceMode === 'range' && !Number.isFinite(Number(b.selectedPrice))) {
+            setBookingActualPrice(bookingId, 'payments');
+            if (!Number.isFinite(Number(b.selectedPrice))) return;
+        }
         b.paymentStatus = 'تم استلام المبلغ';
         if (!appData.invoices) appData.invoices = [];
         
@@ -1521,10 +1580,21 @@ function confirmAdminPayment(bookingId) {
 }
 
 function deleteAdminBooking(bookingId) {
-    if (confirm('حذف الحجز؟')) {
+    if (confirm('حذف الحجز والفاتورة المرتبطة به نهائياً من جميع الحسابات؟')) {
+        const booking = appData.bookings.find(b => b.id === bookingId);
+        const bookingNumber = booking ? booking.bookingNumber : null;
+
+        // حذف الحجز من البيانات المشتركة، وليس من شاشة الأدمن فقط.
         appData.bookings = appData.bookings.filter(b => b.id !== bookingId);
+
+        // إذا كان قد تم إصدار فاتورة لهذا الحجز، تُحذف أيضاً من الإيرادات والأرشيف.
+        if (bookingNumber && Array.isArray(appData.invoices)) {
+            appData.invoices = appData.invoices.filter(inv => inv.bookingNumber !== bookingNumber);
+        }
+
         saveData();
         renderAdminPaymentsTable();
+        alert('تم حذف الحجز والفاتورة المرتبطة به من جميع الحسابات بنجاح.');
     }
 }
 
@@ -1609,10 +1679,21 @@ function deleteNosaInvoice(invoiceId) {
 }
 
 function clearAllNosaInvoices() {
-    if (confirm('تحذير: هل تريد حقاً مسح وتصفير كل الفواتير والإيرادات بالكامل لأجل البدء على نظافة؟')) {
+    if (confirm('تحذير: سيتم حذف كل الفواتير والإيرادات وكل الحجوزات من جميع الفروع والحسابات. هل تريد المتابعة؟')) {
+        // التقفيل الكامل يمسح الدورة المالية والحجوزات المرتبطة بها من البيانات المشتركة.
         appData.invoices = [];
+        appData.bookings = [];
+
+        // إعادة عدادات الأكواد حتى يبدأ النظام من جديد بدون بقايا حجوزات قديمة.
+        if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {} };
+        appData.branchPrefixIndices.dokki = {};
+        appData.branchPrefixIndices.haddayek = {};
+
+        if (Array.isArray(appData.services)) appData.services.forEach(s => { s.currentCount = 0; });
+        if (Array.isArray(appData.products)) appData.products.forEach(p => { p.currentCount = 0; });
+
         saveData();
-        alert('تم مسح جميع الفواتير وتصفير الإيرادات بنجاح!');
+        alert('تم تصفير وحذف كل الفواتير والإيرادات والحجوزات من جميع الفروع والحسابات بنجاح!');
         loadNosaOverview();
     }
 }
@@ -1620,11 +1701,29 @@ function clearAllNosaInvoices() {
 function closeBranchDay(branchId) {
     const bName = branchId === 'dokki' ? 'فرع الدواجن' : 'فرع الحدائق';
     let todayStr = new Date().toLocaleDateString('ar-EG');
-    if (confirm(`هل تريد عمل تقفيل اليوم لـ ${bName}؟`)) {
+    if (confirm(`هل تريد عمل تقفيل اليوم لـ ${bName}؟ سيتم حذف حجوزات هذا الفرع فقط.`)) {
         if (!appData.closedDays) appData.closedDays = [];
+
+        // تقفيل فرع واحد: حذف حجوزات هذا الفرع فقط، مع ترك فواتير وإيرادات الفرع كما هي.
+        appData.bookings = appData.bookings.filter(b => b.branchId !== branchId);
+
+        // تصفير طابور الأكواد والعدادات لهذا الفرع فقط.
+        if (!appData.branchPrefixIndices) appData.branchPrefixIndices = { dokki: {}, haddayek: {} };
+        appData.branchPrefixIndices[branchId] = {};
+        const branchItems = [
+            ...(Array.isArray(appData.services) ? appData.services : []),
+            ...(Array.isArray(appData.products) ? appData.products : [])
+        ];
+        branchItems.forEach(item => {
+            if (item.branchId === branchId) item.currentCount = 0;
+        });
+
+        // منع تكرار سجل التقفيل لنفس الفرع في نفس اليوم.
+        appData.closedDays = appData.closedDays.filter(d => !(d.branchId === branchId && d.date === todayStr));
         appData.closedDays.push({ branchId, date: todayStr, closedAt: new Date().toLocaleTimeString('ar-EG') });
+
         saveData();
-        alert('تم التقفيل بنجاح!');
+        alert(`تم تقفيل ${bName} وحذف حجوزاته فقط بنجاح، مع الإبقاء على فواتيره وإيراداته.`);
         loadNosaOverview();
     }
 }
@@ -1949,64 +2048,128 @@ function loadNosaCommunicationsCenter(){
         return;
     }
     const area=document.getElementById('dynamic-content-area'); if(!area)return;
-    area.innerHTML=`<h2><i class="fas fa-headset"></i> مركز شكاوى العملاء والاستفسارات والآراء</h2>
-      <p class="text-muted">هذا القسم خاص بالإدارة ونوسا ماستر فقط، ولا يظهر لمديري الفروع.</p>
-      <div class="card">
-        <div class="comm-admin-head"><div><h3>طلبات العملاء</h3></div>
-        <div class="comm-filters"><select id="comm-admin-type"><option value="all">الكل</option><option value="complaints">الشكاوى</option><option value="inquiries">الاستفسارات</option><option value="feedback">الآراء والتقييم</option></select>
-        <select id="comm-admin-status"><option value="all">كل الحالات</option><option>جديد</option><option>قيد المتابعة</option><option>تم الرد</option><option>مغلق</option></select></div></div>
-        <div id="admin-communications-list"><p class="text-muted">جاري التحميل...</p></div>
-      </div>`;
-    const load=async()=>{
-      const ref=window.firebase&&firebase.database?firebase.database().ref('client_communications'):null;
-      if(!ref)return;
-      const all=[];
-      for(const kind of ['complaints','inquiries','feedback']){
-        const snap=await ref.child(kind).limitToLast(300).once('value');
-        snap.forEach(c=>all.push({...c.val(),kind}));
-      }
-      all.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      const render=()=>{
-        const type=document.getElementById('comm-admin-type')?.value||'all', status=document.getElementById('comm-admin-status')?.value||'all';
-        const rows=all.filter(x=>(type==='all'||x.kind===type)&&(status==='all'||x.status===status));
-        const el=document.getElementById('admin-communications-list'); if(!el)return;
-        if(!rows.length){el.innerHTML='<p class="text-muted">لا توجد طلبات مطابقة.</p>';return}
-        el.innerHTML=rows.map(x=>`<div class="admin-comm-row" data-id="${x.id}" data-kind="${x.kind}">
-          <div class="admin-comm-meta"><b>${x.kind==='complaints'?'شكوى':x.kind==='inquiries'?'استفسار':'رأي وتقييم'}</b><span class="comm-status">${x.status||'جديد'}</span></div>
-          <div class="admin-comm-client"><strong>${NOSA_PRO_COMM.esc(x.name||'عميل')}</strong>${x.kind!=='feedback'&&x.phone?`<span>${NOSA_PRO_COMM.esc(x.phone)}</span>`:''}<span>${NOSA_PRO_COMM.esc(x.branch||'')}</span>${x.rating?`<span>${'★'.repeat(Number(x.rating))}${'☆'.repeat(5-Number(x.rating))}</span>`:''}</div>
-          <div class="admin-comm-message"><b>${NOSA_PRO_COMM.esc(x.subject||x.type||x.serviceName||'')}</b><p>${NOSA_PRO_COMM.esc(x.message||'')}</p></div>
-          <div class="admin-comm-actions"><select class="comm-status-select">${['جديد','قيد المتابعة','تم الرد','مغلق'].map(s=>`<option ${x.status===s?'selected':''}>${s}</option>`).join('')}</select>
-          <input class="comm-reply-input" placeholder="اكتب الرد..." value="${NOSA_PRO_COMM.esc(x.reply||'')}"><button class="btn btn-primary btn-sm comm-save-btn">حفظ والرد</button>${userRole==='nosa'?'<button class="btn btn-danger btn-sm comm-delete-btn"><i class="fa-solid fa-trash"></i> حذف</button>':''}</div>
-        </div>`).join('');
-        el.querySelectorAll('.comm-save-btn').forEach(btn=>btn.onclick=async()=>{
-          const row=btn.closest('.admin-comm-row'), kind=row.dataset.kind,id=row.dataset.id;
-          const status=row.querySelector('.comm-status-select').value, reply=row.querySelector('.comm-reply-input').value.trim();
+    area.innerHTML=`<div class="comm-center-page">
+      <div class="comm-center-title">
+        <div>
+          <h2><i class="fas fa-headset"></i> مركز شكاوى العملاء والاستفسارات والآراء</h2>
+          <p class="text-muted">متابعة جميع رسائل العملاء والرد عليها مباشرة. التحديثات تظهر لحظيًا لكل حساب إداري ونوسا ماستر.</p>
+        </div>
+      </div>
+      <div class="comm-center-toolbar card">
+        <div class="comm-center-stat"><span>الشكاوى</span><b id="comm-count-complaints">0</b></div>
+        <div class="comm-center-stat"><span>الاستفسارات</span><b id="comm-count-inquiries">0</b></div>
+        <div class="comm-center-stat"><span>التقييمات</span><b id="comm-count-feedback">0</b></div>
+        <div class="comm-filters">
+          <label>عرض:</label>
+          <select id="comm-admin-type"><option value="all">الكل</option><option value="complaints">الشكاوى</option><option value="inquiries">الاستفسارات</option><option value="feedback">الآراء والتقييم</option></select>
+          <select id="comm-admin-status"><option value="all">كل الحالات</option><option>جديد</option><option>قيد المتابعة</option><option>تم الرد</option><option>مغلق</option></select>
+        </div>
+      </div>
+      <div id="admin-communications-sections" class="comm-center-sections">
+        <p class="text-muted">جاري تحميل طلبات العملاء...</p>
+      </div>
+    </div>`;
+
+    const ref=window.firebase&&firebase.database?firebase.database().ref('client_communications'):null;
+    if(!ref){
+      const el=document.getElementById('admin-communications-sections');
+      if(el)el.innerHTML='<p class="text-muted">تعذر الاتصال بقاعدة البيانات حاليًا.</p>';
+      return;
+    }
+
+    const state={complaints:[],inquiries:[],feedback:[]};
+    const labels={complaints:'الشكاوى',inquiries:'الاستفسارات',feedback:'الآراء والتقييمات'};
+    const icons={complaints:'fa-triangle-exclamation',inquiries:'fa-circle-question',feedback:'fa-star'};
+    const listeners=[];
+    const escapeAttr=v=>NOSA_PRO_COMM.esc(v).replace(/`/g,'&#96;');
+
+    const render=()=>{
+      const type=document.getElementById('comm-admin-type')?.value||'all';
+      const status=document.getElementById('comm-admin-status')?.value||'all';
+      ['complaints','inquiries','feedback'].forEach(kind=>{
+        const countEl=document.getElementById('comm-count-'+kind);
+        if(countEl)countEl.textContent=state[kind].filter(x=>status==='all'||(x.status||'جديد')===status).length;
+      });
+      const sections=document.getElementById('admin-communications-sections'); if(!sections)return;
+      const kinds=type==='all'?['complaints','inquiries','feedback']:[type];
+      sections.innerHTML=kinds.map(kind=>{
+        const rows=state[kind].filter(x=>status==='all'||(x.status||'جديد')===status).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+        return `<section class="comm-section comm-section-${kind}">
+          <div class="comm-section-head"><h3><i class="fa-solid ${icons[kind]}"></i> ${labels[kind]}</h3><span>${rows.length} طلب</span></div>
+          <div class="comm-section-list">${rows.length?rows.map(x=>`<article class="admin-comm-card" data-id="${escapeAttr(x.id)}" data-kind="${kind}">
+            <div class="admin-comm-card-top">
+              <div><strong>${NOSA_PRO_COMM.esc(x.name||'عميل')}</strong>${x.kind!=='feedback'&&x.phone?`<span>${NOSA_PRO_COMM.esc(x.phone)}</span>`:''}</div>
+              <span class="comm-status-pill">${NOSA_PRO_COMM.esc(x.status||'جديد')}</span>
+            </div>
+            <div class="admin-comm-card-info">
+              ${x.branch?`<span><i class="fa-solid fa-location-dot"></i> ${NOSA_PRO_COMM.esc(x.branch)}</span>`:''}
+              ${x.rating?`<span class="comm-stars">${'★'.repeat(Number(x.rating))}${'☆'.repeat(5-Number(x.rating))}</span>`:''}
+              <span><i class="fa-regular fa-clock"></i> ${new Date(x.createdAt||Date.now()).toLocaleString('ar-EG')}</span>
+            </div>
+            <div class="admin-comm-message">
+              ${x.subject||x.type||x.serviceName?`<h4>${NOSA_PRO_COMM.esc(x.subject||x.type||x.serviceName)}</h4>`:''}
+              <p>${NOSA_PRO_COMM.esc(x.message||'')}</p>
+              ${x.reference?`<small>المرجع: ${NOSA_PRO_COMM.esc(x.reference)}</small>`:''}
+              ${x.bookingId?`<small>الحجز: ${NOSA_PRO_COMM.esc(x.bookingId)}</small>`:''}
+            </div>
+            <div class="admin-comm-reply-area">
+              <select class="comm-status-select" aria-label="حالة الطلب">${['جديد','قيد المتابعة','تم الرد','مغلق'].map(s=>`<option ${x.status===s?'selected':''}>${s}</option>`).join('')}</select>
+              <textarea class="comm-reply-input" rows="2" placeholder="اكتب الرد على العميل...">${NOSA_PRO_COMM.esc(x.reply||'')}</textarea>
+              <div class="admin-comm-actions">
+                <button class="btn btn-primary btn-sm comm-save-btn"><i class="fa-solid fa-paper-plane"></i> حفظ وإرسال الرد</button>
+                ${userRole==='nosa'?'<button class="btn btn-danger btn-sm comm-delete-btn"><i class="fa-solid fa-trash"></i> حذف</button>':''}
+              </div>
+              ${x.reply?`<div class="comm-existing-reply"><b>آخر رد من الإدارة:</b><span>${NOSA_PRO_COMM.esc(x.reply)}</span></div>`:''}
+            </div>
+          </article>`).join(''):'<div class="comm-empty">لا توجد طلبات في هذا القسم حاليًا.</div>'}</div>
+        </section>`;
+      }).join('');
+
+      sections.querySelectorAll('.comm-save-btn').forEach(btn=>btn.onclick=async()=>{
+        const card=btn.closest('.admin-comm-card'),kind=card.dataset.kind,id=card.dataset.id;
+        const status=card.querySelector('.comm-status-select').value,reply=card.querySelector('.comm-reply-input').value.trim();
+        btn.disabled=true;
+        try{
           await ref.child(kind).child(id).update({status,reply,updatedAt:Date.now(),updatedBy:userRole});
-          const ix=all.findIndex(x=>x.id===id&&x.kind===kind); if(ix>=0){all[ix].status=status;all[ix].reply=reply}
+          const item=state[kind].find(x=>String(x.id)===String(id));
+          if(item){item.status=status;item.reply=reply;item.updatedAt=Date.now();item.updatedBy=userRole;}
           render();
-        });
-        el.querySelectorAll('.comm-delete-btn').forEach(btn=>btn.onclick=async()=>{
-          if(userRole!=='nosa'){alert('الحذف متاح لنوسا Master Admin فقط.');return;}
-          const row=btn.closest('.admin-comm-row'), kind=row.dataset.kind,id=row.dataset.id;
-          const label=kind==='complaints'?'الشكوى':kind==='inquiries'?'الاستفسار':'التقييم';
-          if(!confirm(`هل تريد حذف ${label} نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+        }catch(err){alert('تعذر حفظ الرد: '+(err.message||err));btn.disabled=false;}
+      });
+      sections.querySelectorAll('.comm-delete-btn').forEach(btn=>btn.onclick=async()=>{
+        if(userRole!=='nosa'){alert('الحذف متاح لنوسا Master Admin فقط.');return;}
+        const card=btn.closest('.admin-comm-card'),kind=card.dataset.kind,id=card.dataset.id;
+        const label=kind==='complaints'?'الشكوى':kind==='inquiries'?'الاستفسار':'التقييم';
+        if(!confirm(`هل تريد حذف ${label} نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+        btn.disabled=true;
+        try{
           await ref.child(kind).child(id).remove();
-          try {
-            const localKey = kind==='feedback' ? 'nosa_feedback' : ('nosa_'+kind);
-            const cached = JSON.parse(localStorage.getItem(localKey)||'[]').filter(x=>x.id!==id);
-            localStorage.setItem(localKey, JSON.stringify(cached));
-          } catch(_) {}
-          const ix=all.findIndex(x=>x.id===id&&x.kind===kind); if(ix>=0) all.splice(ix,1);
+          try{
+            const localKey=kind==='feedback'?'nosa_feedback':('nosa_'+kind);
+            const cached=JSON.parse(localStorage.getItem(localKey)||'[]').filter(x=>x.id!==id);
+            localStorage.setItem(localKey,JSON.stringify(cached));
+          }catch(_){ }
+          state[kind]=state[kind].filter(x=>String(x.id)!==String(id));
           window.dispatchEvent(new CustomEvent('nosa:communication-deleted',{detail:{kind,id}}));
           render();
-        });
-      };
-      document.getElementById('comm-admin-type').onchange=render;
-      document.getElementById('comm-admin-status').onchange=render;
-      render();
+        }catch(err){alert('تعذر حذف الطلب: '+(err.message||err));btn.disabled=false;}
+      });
     };
-    load();
-};
+
+    ['complaints','inquiries','feedback'].forEach(kind=>{
+      const listener=ref.child(kind).limitToLast(300).on('value',snap=>{
+        const arr=[];
+        snap.forEach(c=>arr.push({...c.val(),id:c.key,kind}));
+        arr.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+        state[kind]=arr;
+        render();
+      },err=>console.error('Communication center sync error:',kind,err));
+      listeners.push({kind,listener});
+    });
+
+    document.getElementById('comm-admin-type').onchange=render;
+    document.getElementById('comm-admin-status').onchange=render;
+}
 
 /* ================= NOSA V9 — CLIENT DASHBOARD NAVIGATION ================= */
 function nosaOpenClientTab(targetId){
